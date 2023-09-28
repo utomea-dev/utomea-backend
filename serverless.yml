@@ -1,0 +1,113 @@
+service: utomea-serverless-api-staging-1
+# package:
+#   individually: true
+frameworkVersion: '3'
+custom:
+  bucket: utomea-events
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  timeout: 30 # the timeout is 20 seconds (default is 6 seconds)
+  lambdaHashingVersion: 20201221
+  apiGateway:
+    binaryMediaTypes:
+      - '*/*'
+  iamRoleStatements:
+  # Allow to get and put objects in a bucket
+    - Effect: Allow
+      Action:
+        - "s3:PutObject"
+        - "s3:GetObject"
+      Resource:
+        - arn:aws:s3:::react-native-events/*
+
+  
+
+functions:
+  getAllEvents: 
+    handler: functions/events.getAllEvents
+    events:
+      - httpApi:
+          path: /events
+          method: get
+
+
+  createEvent:
+    handler: functions/events.createEvent
+    events:
+      - httpApi:
+          path: /events
+          method: post
+
+  editEvent:
+    handler: functions/events.editEvent
+    events:
+      - httpApi:
+          path: /events/{id}
+          method: put
+
+  deleteEvent:
+    handler: functions/events.deleteEvent
+    events:
+      - httpApi:
+          path: /events/{id}
+          method: delete
+
+  uploadImages:
+    handler: index.uploadImagesToS3
+    events:
+      - httpApi:
+          path: /events/upload/{id}
+          method: post
+    environment:
+      BUCKET_NAME: react-native-events
+
+  userSignup:
+    handler: functions/auth.userSignup
+    events:
+      - httpApi:
+          path: /user/signup
+          method: post
+
+  userSignIn:
+    handler: functions/auth.userSignIn
+    events:
+      - httpApi:
+          path: /user/signin
+          method: post
+
+  updateUser:
+    handler: functions/auth.updateUser
+    events:
+      - httpApi:
+          path: /user/user-details
+          method: put
+
+  forgotPassword:
+    handler: functions/auth.forgotPassword
+    events:
+      - httpApi:
+          path: /auth/forgot-password
+          method: post
+
+  resetPassword:
+    handler: functions/auth.resetPassword
+    events:
+      - httpApi:
+          path: /auth/reset-password/{token}
+          method: post
+
+  verify-token:
+    handler: src/middleware/verifyToken.authenticateJWT       
+
+plugins:
+  - serverless-offline
+  - serverless-plugin-typescript
+
+resources:
+    Resources:
+        StorageBucket:
+            Type: "AWS::S3::Bucket"
+            Properties:
+                BucketName: utomea-events

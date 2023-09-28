@@ -1,0 +1,40 @@
+{
+  "name": "reactnative-serverless-api",
+  "version": "1.0.0",
+  "description": "<!-- title: 'AWS Simple HTTP Endpoint example in NodeJS' description: 'This template demonstrates how to make a simple HTTP API with Node.js running on AWS Lambda and API Gateway using the Serverless Framework.' layout: Doc framework: v3 platform: AWS language: nodeJS authorLink: 'https://github.com/serverless' authorName: 'Serverless, inc.' authorAvatar: 'https://avatars1.githubusercontent.com/u/13742415?s=200&v=4' -->",
+  "main": "index.js",
+  "scripts": {
+    "start": "sls offline",
+    "dev": "nodemon -e js,ts,jsx,tsx -x npm run start",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "nikhil-321",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.329.0",
+    "@aws-sdk/client-secrets-manager": "^3.405.0",
+    "@aws-sdk/client-ses": "^3.410.0",
+    "@aws-sdk/s3-request-presigner": "^3.331.0",
+    "@types/aws-lambda": "^8.10.115",
+    "@types/node": "^20.1.1",
+    "@types/serverless": "^3.12.11",
+    "aws-sdk": "^2.1457.0",
+    "bcryptjs": "^2.4.3",
+    "busboy": "^1.6.0",
+    "dotenv": "^16.0.3",
+    "jsonwebtoken": "^9.0.1",
+    "pg": "^8.10.0",
+    "serverless-offline": "^12.0.4",
+    "serverless-plugin-typescript": "^2.1.4",
+    "sharp": "^0.32.5",
+    "typeorm": "^0.3.16",
+    "typescript": "^5.0.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.2",
+    "@types/jsonwebtoken": "^9.0.2",
+    "@types/multer": "^1.4.7",
+    "@types/multer-s3": "^3.0.0"
+  }
+}
