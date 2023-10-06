@@ -1,36 +1,26 @@
 import { getDataSource } from "../../data-source";
 import { Event } from "../entity/Event.entity";
-// import { Photo } from "../entity/Photo.entity";
+import { Photo } from "../entity/Photo.entity";
 import { Messages } from "../utilities/Messages";
-// import {
-//   S3Client,
-//   PutObjectCommand,
-//   S3ClientConfig,
-//   GetObjectCommand,
-// } from "@aws-sdk/client-s3";
-// import { parser } from "../utilities/formParser";
-// import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-// import * as sharp from "sharp";
-// import * as path from "path";
-import { authenticateJWT } from "../middleware/verifyToken";
 import {
-  APIGatewayProxyCallback,
-  APIGatewayProxyEvent,
-  Context,
-} from "aws-lambda";
+  S3Client,
+  PutObjectCommand,
+  S3ClientConfig,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
+import { parser } from "../utilities/formParser";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import * as path from "path";
+import { authenticateJWT } from "../middleware/verifyToken";
+import { APIGatewayProxyCallback, Context } from "aws-lambda";
+import createErrorResponse from "../utilities/createErrorResponse";
+import {
+  getAccessKeyFromSecretManager,
+  getAwsSecretKeyFromSecretManager,
+} from "../utilities/SecretManager";
+import { In } from "typeorm";
 
 require("dotenv").config();
-
-// const s3Config: S3ClientConfig = {
-//   region: "us-east-1",
-//   credentials: {
-//     accessKeyId: "",
-//     secretAccessKey: "",
-//   },
-// };
-
-// const s3 = new S3Client(s3Config);
-const MAX_SIZE = 4000000; // 4MB
 
 export class EventController {
   public static getAllEvents = async (
@@ -39,17 +29,22 @@ export class EventController {
     callback: APIGatewayProxyCallback
   ) => {
     let groupedBy = {};
-    const { limit = 10, skip = 0 } = req.queryStringParameters || {};
-    console.log("limit", limit, skip);
+    const { limit = 10, skip = 0, verified, date } =
+      req.queryStringParameters || {};
+    console.log("limit", limit, skip, verified, date);
     try {
       await authenticateJWT(req, context, callback);
       const AppDataSource = await getDataSource();
       const events = await AppDataSource.getRepository(Event)
         .createQueryBuilder("event")
-        .leftJoinAndSelect("event.photos", "photo")
+        .leftJoinAndSelect("event.photos", "photo", "photo.is_deleted = false")
         .where("event.userId = :userId", { userId: req.user.id })
-        .andWhere(" event.is_deleted = :is_deleted", { is_deleted: false })
-        .loadRelationCountAndMap("event.photosCount", "event.photos")
+        .andWhere(verified ? "event.verified = :verified" : "1=1", { verified })
+        .andWhere(date ? `DATE_TRUNC('day', "end_timestamp") = :date` : "1=1", {
+          date,
+        })
+        .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
+        // .loadRelationCountAndMap("event.photosCount", "event.photos")
         .orderBy("event.end_timestamp", "DESC")
         .skip(skip)
         .take(limit)
@@ -66,17 +61,39 @@ export class EventController {
 
       const result = Object.values(groupedBy);
 
+      const getTotalCount = async () => {
+        return await AppDataSource.getRepository(Event)
+          .createQueryBuilder("event")
+          .where("event.userId = :userId", { userId: req.user.id })
+          .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
+          .getCount();
+      };
+
+      const getUnverifiedCount = async () => {
+        return await AppDataSource.getRepository(Event)
+          .createQueryBuilder("event")
+          .where("event.userId = :userId", { userId: req.user.id })
+          .andWhere("event.verified = :verified", { verified: false })
+          .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
+          .getCount();
+      };
+
+      const [totalCount, unverifiedCount] = await Promise.all([
+        getTotalCount(),
+        getUnverifiedCount(),
+      ]);
+
       return {
         message: Messages.EVENT_FETCHED_SUCCESS,
         data: result,
+        totalCount,
+        unverifiedCount,
       };
     } catch (error) {
-      return {
-        statusCode: error.statusCode || 500,
-        body: JSON.stringify({
-          message: error.message || "Internal Server Error",
-        }),
-      };
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
     }
   };
 
@@ -225,90 +242,170 @@ export class EventController {
     }
   };
 
-  // public static uploadImagesToS3 = async (event) => {
-  //   let outputBuffer;
-  //   console.log("Upload images function triggered");
-  //   const AppDataSource = await getDataSource();
-  //   const eventRepository = AppDataSource.getRepository(Event);
-  //   const photoRepository = AppDataSource.getRepository(Photo);
-  //   try {
-  //     const id = +event?.pathParameters?.id;
-  //     const foundEvent = await eventRepository.findOne({
-  //       where: { id, is_deleted: false },
-  //     });
-  //     if (!foundEvent) {
-  //       return {
-  //         statusCode: 404,
-  //         body: JSON.stringify({
-  //           message: `Event with id:${id} not found.`,
-  //         }),
-  //       };
-  //     }
+  public static search = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await authenticateJWT(req, context, callback);
+      const AppDataSource = await getDataSource();
+      if (!req?.user?.id) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({
+            message: Messages.UNAUTHORIZED,
+          }),
+        };
+      }
+      console.log("reqqq", req);
 
-  //     const formData: any = await parser(event, MAX_SIZE);
-  //     const files = formData.files;
+      const { start_date, end_date, category, rating, search } = JSON.parse(
+        req.body
+      );
+      console.log("start date", start_date, end_date, category);
 
-  //     const uploadPromises = files.map(async (file) => {
-  //       let isHeifImage = false;
-  //       // if (file?.filename?.mimeType === "image/heif" || file?.filename?.mimeType === "image/heic") {
-  //       //   isHeifImage = true;
-  //       //   console.log("Innnnnn heif convert type", file?.filename?.mimeType);
-  //       //   // outputBuffer = await convert({
-  //       //   //   buffer: file?.content,
-  //       //   //   format: "JPEG",
-  //       //   //   quality: 1,
-  //       //   // });
-  //       //   outputBuffer = await sharp(file?.content).toFormat("jpeg").toBuffer()
-  //       // }
-  //       const compressedContent = await sharp(
-  //         outputBuffer ? outputBuffer : file?.content
-  //       )
-  //         .resize({ width: 400, height: 300, fit: "cover" })
-  //         .png({ quality: 80, compressionLevel: 8 })
-  //         .toBuffer();
-  //       const s3Params = {
-  //         Bucket: "react-native-events",
-  //         Key: isHeifImage
-  //           ? `${path.parse(file?.filename?.filename).name}.jpg`
-  //           : file?.filename?.filename,
-  //         Body: compressedContent,
-  //         ContentType: isHeifImage ? "image/jpeg" : file?.filename?.mimeType,
-  //       };
-  //       const command = new PutObjectCommand(s3Params);
-  //       await s3.send(command);
-  //     });
-  //     await Promise.all(uploadPromises);
-  //     let responseArray: any = [];
-  //     for (let e of files) {
-  //       let isHeifImage = false;
-  //       isHeifImage =
-  //         e?.filename?.mimeType === "image/heif" ||
-  //         e?.filename?.mimeType === "image/heic"
-  //           ? true
-  //           : false;
-  //       const s3Command = new GetObjectCommand({
-  //         Bucket: "react-native-events",
-  //         Key: isHeifImage
-  //           ? `${path.parse(e?.filename?.filename).name}.jpg`
-  //           : e?.filename?.filename,
-  //       });
-  //       const url = await getSignedUrl(s3, s3Command, { expiresIn: 600000 });
-  //       responseArray.push(url);
-  //       const photo = new Photo();
-  //       photo.url = url;
-  //       photo.event = foundEvent;
-  //       await photoRepository.save(photo);
-  //     }
+      const events = await AppDataSource.getRepository(Event)
+        .createQueryBuilder("event")
+        .leftJoinAndSelect("event.photos", "photo")
+        .leftJoinAndSelect("event.category", "category")
+        .where("event.userId = :userId", { userId: req.user.id })
+        .andWhere(
+          start_date && end_date
+            ? `DATE_TRUNC('day', "end_timestamp") >= :start_date AND DATE_TRUNC('day', "end_timestamp") <= :end_date`
+            : `1=1`,
+          { start_date, end_date }
+        )
+        .andWhere(
+          category.length ? "event.category IN (:...category)" : `1=1`,
+          { category }
+        )
+        .andWhere(rating.length ? "event.rating IN (:...rating)" : `1=1`, {
+          rating,
+        })
+        .andWhere(
+          search
+            ? "event.title = :search OR event.location = :search OR category.name = :search"
+            : `1=1`,
+          { search }
+        )
+        .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
+        .loadRelationCountAndMap("event.photosCount", "event.photos")
+        .orderBy("event.end_timestamp", "DESC")
+        .getMany();
 
-  //     return {
-  //       statusCode: 200,
-  //       body: JSON.stringify({
-  //         message: "Images uploaded successfully",
-  //         data: responseArray,
-  //       }),
-  //     };
-  //   } catch (error) {
-  //     console.log("Error in catch block", error);
-  //   }
-  // };
+      return {
+        message: Messages.EVENT_FETCHED_SUCCESS,
+        data: events,
+      };
+    } catch (error) {
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static uploadImagesToS3 = async (event) => {
+    const s3Config: S3ClientConfig = {
+      region: "us-east-2",
+      credentials: {
+        accessKeyId: await getAccessKeyFromSecretManager(),
+        secretAccessKey: await getAwsSecretKeyFromSecretManager(),
+      },
+    };
+
+    const s3 = new S3Client(s3Config);
+    const MAX_SIZE = 6000000; // 6MB
+
+    console.log("Upload images function triggered");
+    const AppDataSource = await getDataSource();
+    const eventRepository = AppDataSource.getRepository(Event);
+    const photoRepository = AppDataSource.getRepository(Photo);
+    try {
+      const id = +event?.pathParameters?.id;
+      const foundEvent = await eventRepository.findOne({
+        where: { id, is_deleted: false },
+      });
+      if (!foundEvent) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.EVENT_NOT_FOUND,
+          }),
+        };
+      }
+
+      const formData: any = await parser(event, MAX_SIZE);
+      const files = formData.files;
+
+      const uploadPromises = files.map(async (file) => {
+        const s3Params = {
+          Bucket: "utomea-events",
+          Key: file?.filename?.filename,
+          Body: file?.content,
+          ContentType: file?.filename?.mimeType,
+        };
+        const command = new PutObjectCommand(s3Params);
+        await s3.send(command);
+      });
+      await Promise.all(uploadPromises);
+      let responseArray: any = [];
+
+      for (let e of files) {
+        const url = `https://utomea-events.s3.us-east-2.amazonaws.com/${e?.filename?.filename}`;
+        responseArray.push(url);
+        const photo = new Photo();
+        photo.url = url;
+        photo.event = foundEvent;
+        await photoRepository.save(photo);
+      }
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: "Images uploaded successfully",
+          data: responseArray,
+        }),
+      };
+    } catch (error) {
+      console.log("Error in catch block", error);
+    }
+  };
+
+  public static deletePhotos = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await authenticateJWT(req, context, callback);
+      const AppDataSource = await getDataSource();
+      const PhotoRepository = AppDataSource.getRepository(Photo);
+      if (!req?.user?.id) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({
+            message: Messages.UNAUTHORIZED,
+          }),
+        };
+      }
+      const { photoIds } = JSON.parse(req?.body);
+      const photos = await PhotoRepository.find({
+        where: { id: In(photoIds), is_deleted: false },
+      });
+      for (let photo of photos) {
+        photo.is_deleted = true;
+        await PhotoRepository.save(photo);
+      }
+      return {
+        message: Messages.PHOTOS_DELETED_SUCCESS,
+      };
+    } catch (error) {
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
 }

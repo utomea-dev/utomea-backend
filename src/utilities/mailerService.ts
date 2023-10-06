@@ -12,7 +12,7 @@ const createSendEmailCommand = (recipientAddress: string, link: string) => {
       Body: {
         Html: {
           Charset: "UTF-8",
-          Data: `<p>Reset password link:  ${link}</p>`,
+          Data: `Reset Password Link: <a href="#">${link}</a>`,
         },
         Text: {
           Charset: "UTF-8",
@@ -32,7 +32,7 @@ const run = async (recipientAddress: string, link: string) => {
   const sendEmailCommand = createSendEmailCommand(
     recipientAddress,
     link
-  );
+  );  
 
   try {
     return await sesClient.send(sendEmailCommand);

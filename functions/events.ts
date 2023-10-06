@@ -64,3 +64,18 @@ export const deleteEvent = async (
     };
   }
 };
+
+export const search = async (
+  event: APIGatewayProxyEvent,
+  context: Context,
+  callback: APIGatewayProxyCallback
+) => {
+  try {
+    return await EventController.search(event, context, callback);
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message || "Something went wrong" }),
+    };
+  }
+};

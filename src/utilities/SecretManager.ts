@@ -15,12 +15,11 @@ export const getSecretFromSecretManager = async () => {
       })
     );
     const { SECRET_KEY } = JSON.parse(response.SecretString as string);
-    return SECRET_KEY
+    return SECRET_KEY;
   } catch (error) {
     console.log("Error from getting secrets from secret manager", error);
   }
 };
-
 
 export const getAccessKeyFromSecretManager = async () => {
   try {
@@ -33,7 +32,27 @@ export const getAccessKeyFromSecretManager = async () => {
         SecretId: secret_name,
       })
     );
-    return response
+    const { AWS_ACCESS_KEY } = JSON.parse(response.SecretString as string);
+    return AWS_ACCESS_KEY;
+  } catch (error) {
+    console.log("Error from getting secrets from secret manager", error);
+  }
+};
+
+
+export const getAwsSecretKeyFromSecretManager = async () => {
+  try {
+    const secret_name = "dev/utomea/accessKey";
+    const client = new SecretsManagerClient({
+      region: "us-east-2",
+    });
+    const response = await client.send(
+      new GetSecretValueCommand({
+        SecretId: secret_name,
+      })
+    );
+    const { AWS_SECRET_KEY } = JSON.parse(response.SecretString as string);
+    return AWS_SECRET_KEY;
   } catch (error) {
     console.log("Error from getting secrets from secret manager", error);
   }

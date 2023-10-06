@@ -2,10 +2,8 @@ import {
   Column,
   Entity,
   Index,
-  JoinColumn,
   ManyToOne,
   OneToMany,
-  OneToOne,
   PrimaryGeneratedColumn,
 } from "typeorm";
 import { Photo } from "./Photo.entity";
@@ -13,7 +11,7 @@ import { User } from "./User.entity";
 import { Category } from "./Category.entity";
 
 @Entity()
-@Index(["latitude", "longitude", "begin_timestamp"], { unique: true })
+@Index(["latitude", "longitude", "begin_timestamp", "user"], { unique: true })
 export class Event {
   @PrimaryGeneratedColumn()
   id: number;

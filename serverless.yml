@@ -1,7 +1,7 @@
 service: utomea-serverless-api-staging-1
 # package:
 #   individually: true
-frameworkVersion: '3'
+frameworkVersion: "3"
 custom:
   bucket: utomea-events
 
@@ -12,26 +12,23 @@ provider:
   lambdaHashingVersion: 20201221
   apiGateway:
     binaryMediaTypes:
-      - '*/*'
-  iamRoleStatements:
-  # Allow to get and put objects in a bucket
-    - Effect: Allow
-      Action:
-        - "s3:PutObject"
-        - "s3:GetObject"
-      Resource:
-        - arn:aws:s3:::react-native-events/*
-
-  
+      - "*/*"
+  # iamRoleStatements:
+  #   # Allow to get and put objects in a bucket
+  #   - Effect: Allow
+  #     Action:
+  #       - "s3:PutObject"
+  #       - "s3:GetObject"
+  #     Resource:
+  #       - arn:aws:s3:::react-native-events/*
 
 functions:
-  getAllEvents: 
+  getAllEvents:
     handler: functions/events.getAllEvents
     events:
       - httpApi:
           path: /events
           method: get
-
 
   createEvent:
     handler: functions/events.createEvent
@@ -54,6 +51,13 @@ functions:
           path: /events/{id}
           method: delete
 
+  searchEvent:
+    handler: functions/events.search
+    events:
+      - httpApi:
+          path: /events/search
+          method: post
+
   uploadImages:
     handler: index.uploadImagesToS3
     events:
@@ -61,7 +65,15 @@ functions:
           path: /events/upload/{id}
           method: post
     environment:
-      BUCKET_NAME: react-native-events
+      BUCKET_NAME: utomea-events
+
+  deletePhotos:
+    handler: functions/photo.deletePhotos
+    events:
+      - httpApi:
+          path: /photos
+          method: delete
+
 
   userSignup:
     handler: functions/auth.userSignup
@@ -98,16 +110,23 @@ functions:
           path: /auth/reset-password/{token}
           method: post
 
+  getAllCategories:
+    handler: functions/category.getAllCategories
+    events:
+      - httpApi:
+          path: /category
+          method: get
+
   verify-token:
-    handler: src/middleware/verifyToken.authenticateJWT       
+    handler: src/middleware/verifyToken.authenticateJWT
 
 plugins:
   - serverless-offline
   - serverless-plugin-typescript
 
 resources:
-    Resources:
-        StorageBucket:
-            Type: "AWS::S3::Bucket"
-            Properties:
-                BucketName: utomea-events
+  Resources:
+    StorageBucket:
+      Type: "AWS::S3::Bucket"
+      Properties:
+        BucketName: utomea-events

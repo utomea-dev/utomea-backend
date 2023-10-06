@@ -17,7 +17,6 @@ import {
   IUserSignUp,
 } from "../interfaces/user.interface";
 import {
-  getAccessKeyFromSecretManager,
   getSecretFromSecretManager,
 } from "../utilities/SecretManager";
 import createErrorResponse from "../utilities/createErrorResponse";
@@ -178,7 +177,7 @@ export class AuthController {
         expiresIn: "15m",
       });
 
-      const resetPasswordLink = `https://utomeaapp/reset-password/${token}`;
+      const resetPasswordLink = `utomeaapp://reset-password/${token}`;
       await run(email, resetPasswordLink);
       return {
         message: Messages.RESET_LINK_SENT,
