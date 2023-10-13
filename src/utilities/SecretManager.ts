@@ -5,6 +5,7 @@ import {
 
 export const getSecretFromSecretManager = async () => {
   try {
+    console.log("Innn secret maneger")
     const secret_name = "utomea/dev/secret_key";
     const client = new SecretsManagerClient({
       region: "us-east-2",

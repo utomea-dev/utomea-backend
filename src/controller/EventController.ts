@@ -2,15 +2,8 @@ import { getDataSource } from "../../data-source";
 import { Event } from "../entity/Event.entity";
 import { Photo } from "../entity/Photo.entity";
 import { Messages } from "../utilities/Messages";
-import {
-  S3Client,
-  PutObjectCommand,
-  S3ClientConfig,
-  GetObjectCommand,
-} from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, S3ClientConfig } from "@aws-sdk/client-s3";
 import { parser } from "../utilities/formParser";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import * as path from "path";
 import { authenticateJWT } from "../middleware/verifyToken";
 import { APIGatewayProxyCallback, Context } from "aws-lambda";
 import createErrorResponse from "../utilities/createErrorResponse";
@@ -19,6 +12,7 @@ import {
   getAwsSecretKeyFromSecretManager,
 } from "../utilities/SecretManager";
 import { In } from "typeorm";
+import { checkAuthentication } from "../middleware/checkAuth";
 
 require("dotenv").config();
 
@@ -51,6 +45,10 @@ export class EventController {
         .getMany();
 
       for (let event of events) {
+        event["hero_image"] = event?.photos.length
+          ? event.photos[0]?.url
+          : null;
+        console.log("event", event);
         const end_date = event?.end_timestamp.toLocaleDateString("en-US");
         if (!groupedBy[end_date]) {
           groupedBy[end_date] = [event];
@@ -104,16 +102,8 @@ export class EventController {
   ) => {
     try {
       console.log("Create Event triggered");
-      await authenticateJWT(req, context, callback);
-      if (!req?.user?.id) {
-        return {
-          statusCode: 401,
-          body: JSON.stringify({
-            message: Messages.UNAUTHORIZED,
-          }),
-        };
-      }
-      const AppDataSource = await getDataSource();
+        await checkAuthentication(req, context, callback);
+        const AppDataSource = await getDataSource();
       const eventRepository = AppDataSource.getRepository(Event);
       const {
         latitude,
@@ -159,15 +149,7 @@ export class EventController {
     context: Context,
     callback: APIGatewayProxyCallback
   ) => {
-    await authenticateJWT(req, context, callback);
-    if (!req?.user?.id) {
-      return {
-        statusCode: 401,
-        body: JSON.stringify({
-          message: Messages.UNAUTHORIZED,
-        }),
-      };
-    }
+    await checkAuthentication(req, context, callback);
     const AppDataSource = await getDataSource();
     const eventRepository = AppDataSource.getRepository(Event);
     try {
@@ -204,15 +186,7 @@ export class EventController {
     context: Context,
     callback: APIGatewayProxyCallback
   ) => {
-    await authenticateJWT(req, context, callback);
-    if (!req?.user?.id) {
-      return {
-        statusCode: 401,
-        body: JSON.stringify({
-          message: Messages.UNAUTHORIZED,
-        }),
-      };
-    }
+    await checkAuthentication(req, context, callback);
     const AppDataSource = await getDataSource();
     const eventRepository = AppDataSource.getRepository(Event);
     try {
@@ -248,18 +222,9 @@ export class EventController {
     callback: APIGatewayProxyCallback
   ) => {
     try {
-      await authenticateJWT(req, context, callback);
+      await checkAuthentication(req, context, callback);
       const AppDataSource = await getDataSource();
-      if (!req?.user?.id) {
-        return {
-          statusCode: 401,
-          body: JSON.stringify({
-            message: Messages.UNAUTHORIZED,
-          }),
-        };
-      }
       console.log("reqqq", req);
-
       const { start_date, end_date, category, rating, search } = JSON.parse(
         req.body
       );
@@ -299,6 +264,7 @@ export class EventController {
         data: events,
       };
     } catch (error) {
+      console.log("error", error);
       return createErrorResponse(
         error?.status || 500,
         error.message || "Internal Server Error"
@@ -370,6 +336,10 @@ export class EventController {
       };
     } catch (error) {
       console.log("Error in catch block", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
     }
   };
 
@@ -379,17 +349,9 @@ export class EventController {
     callback: APIGatewayProxyCallback
   ) => {
     try {
-      await authenticateJWT(req, context, callback);
+      await checkAuthentication(req, context, callback);
       const AppDataSource = await getDataSource();
       const PhotoRepository = AppDataSource.getRepository(Photo);
-      if (!req?.user?.id) {
-        return {
-          statusCode: 401,
-          body: JSON.stringify({
-            message: Messages.UNAUTHORIZED,
-          }),
-        };
-      }
       const { photoIds } = JSON.parse(req?.body);
       const photos = await PhotoRepository.find({
         where: { id: In(photoIds), is_deleted: false },
@@ -402,6 +364,127 @@ export class EventController {
         message: Messages.PHOTOS_DELETED_SUCCESS,
       };
     } catch (error) {
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static getEventDetails = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await checkAuthentication(req, context, callback);
+      const AppDataSource = await getDataSource();
+      const eventRepository = AppDataSource.getRepository(Event);
+      const id = +req?.pathParameters?.id;
+      const event = await eventRepository
+        .createQueryBuilder("event")
+        .leftJoinAndSelect("event.photos", "photo", "photo.is_deleted = false")
+        .leftJoinAndSelect("event.category", "category")
+        .where("event.id = :id", { id })
+        .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
+        .getOne();
+
+      if (!event) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.EVENT_NOT_FOUND,
+          }),
+        };
+      }
+      return {
+        message: Messages.EVENT_DETAILS_FETCH,
+        data: event,
+      };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static autoSuggest = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await checkAuthentication(req, context, callback);
+      const AppDataSource = await getDataSource();
+      const eventRepository = AppDataSource.getRepository(Event);
+      const { search } = JSON.parse(req.body);
+
+      let titleSearch = await eventRepository
+        .createQueryBuilder("event")
+        .where("event.userId = :userId AND LOWER(event.title) like :title", {
+          userId: req.user.id,
+          title: `%${search.toLowerCase()}%`,
+        })
+        .andWhere("event.is_deleted = false")
+        .select("event.title")
+        .getMany();
+
+      const categorySearch = await eventRepository
+        .createQueryBuilder("event")
+        .leftJoinAndSelect("event.category", "category")
+        .where(
+          "event.userId = :userId AND LOWER(category.name) like :category",
+          {
+            userId: req.user.id,
+            category: `%${search.toLowerCase()}%`,
+          }
+        )
+        .andWhere("event.is_deleted = false")
+        .select(["event.id", "category.name"])
+        .getMany();
+
+      const locationSearch = await eventRepository
+        .createQueryBuilder("event")
+        .where(
+          "event.userId = :userId AND LOWER(event.location) like :location",
+          {
+            userId: req.user.id,
+            location: `%${search.toLowerCase()}%`,
+          }
+        )
+        .andWhere("event.is_deleted = false")
+        .select("event.location")
+        .getMany();
+
+      let finalCategorySearch: string[] = [];
+      let finalTitleSearch: any[] = [];
+      let finalLocationSearch: any[] = [];
+
+      for (let e of categorySearch) {
+        finalCategorySearch.push(e.category.name);
+      }
+
+      for (let e of titleSearch) {
+        finalTitleSearch.push(Object.values(e));
+      }
+
+      for (let e of locationSearch) {
+        finalLocationSearch.push(Object.values(e));
+      }
+      const finalResult = [
+        ...finalTitleSearch,
+        ...finalLocationSearch,
+        ...finalCategorySearch,
+      ];
+
+      return {
+        message: Messages.AUTO_SUGGESTION_FETCH,
+        data: finalResult.flat(),
+      };
+    } catch (error) {
+      console.log("error", error);
       return createErrorResponse(
         error?.status || 500,
         error.message || "Internal Server Error"

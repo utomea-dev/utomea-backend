@@ -58,6 +58,20 @@ functions:
           path: /events/search
           method: post
 
+  autoSuggest:
+    handler: functions/events.autoSuggest
+    events:
+      - httpApi:
+          path: /search/autosuggest
+          method: post
+  
+  getEventDetails:
+    handler: functions/events.getEventDetails
+    events:
+      - httpApi:
+          path: /events/{id}
+          method: get
+
   uploadImages:
     handler: index.uploadImagesToS3
     events:
@@ -110,12 +124,40 @@ functions:
           path: /auth/reset-password/{token}
           method: post
 
+  changePassword:
+    handler: functions/auth.changePassword
+    events:
+      - httpApi:
+          path: /auth/change-password
+          method: post
+
   getAllCategories:
     handler: functions/category.getAllCategories
     events:
       - httpApi:
           path: /category
           method: get
+  
+  createExcludedLocation:
+    handler: functions/excludedList.createExcludedLocation
+    events:
+      - httpApi:
+          path: /exclude-location
+          method: post
+
+  getExcludedLocations:
+    handler: functions/excludedList.getExcludedLocations
+    events:
+      - httpApi:
+          path: /excluded-locations
+          method: get
+  
+  deleteExcludedLocation:
+    handler: functions/excludedList.deleteExcludedLocation
+    events:
+      - httpApi:
+          path: /excluded-location/{id}
+          method: delete
 
   verify-token:
     handler: src/middleware/verifyToken.authenticateJWT

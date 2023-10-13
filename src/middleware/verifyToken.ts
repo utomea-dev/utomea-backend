@@ -13,6 +13,7 @@ export const authenticateJWT = async (req, context, callback) => {
         body: JSON.stringify({ message: Messages.UNAUTHORIZED }),
       });
     }
+
     const token = authHeader.split(" ")[1];
     const SECRET_KEY = await getSecretFromSecretManager();
     jwt.verify(token, SECRET_KEY, (err, decoded) => {

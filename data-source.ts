@@ -4,6 +4,7 @@ import { Event } from "./src/entity/Event.entity";
 import { Photo } from "./src/entity/Photo.entity";
 import { User } from "./src/entity/User.entity";
 import { Category } from "./src/entity/Category.entity";
+import { ExcludedList } from "./src/entity/ExcludedList.entity";
 
 const AppDataSource = new DataSource({
   type: "postgres",
@@ -18,7 +19,7 @@ const AppDataSource = new DataSource({
   database: "react-native-serverless",
   synchronize: true,
   logging: false,
-  entities: [Event, Photo, User, Category],
+  entities: [Event, Photo, User, Category, ExcludedList],
   migrations: [],
   subscribers: [],
   // ssl: {

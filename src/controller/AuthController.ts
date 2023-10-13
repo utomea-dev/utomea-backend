@@ -10,18 +10,18 @@ import {
 } from "aws-lambda";
 
 import {
+  IJwtPayload,
   IResetPassword,
   IUpdateUserDetails,
   IUser,
   IUserSignIn,
   IUserSignUp,
 } from "../interfaces/user.interface";
-import {
-  getSecretFromSecretManager,
-} from "../utilities/SecretManager";
+import { getSecretFromSecretManager } from "../utilities/SecretManager";
 import createErrorResponse from "../utilities/createErrorResponse";
 import { run } from "../utilities/mailerService";
 import { authenticateJWT } from "../middleware/verifyToken";
+import { checkAuthentication } from "../middleware/checkAuth";
 
 require("dotenv").config();
 
@@ -73,7 +73,9 @@ export class AuthController {
       const AppDataSource = await getDataSource();
       const userRepository = AppDataSource.getRepository(User);
       const { email, password }: IUserSignIn = JSON.parse(req.body || "{}");
-      const user: IUser | null = await userRepository.findOne({ where: { email } });
+      const user: IUser | null = await userRepository.findOne({
+        where: { email },
+      });
       if (!user) {
         return {
           statusCode: 404,
@@ -83,7 +85,10 @@ export class AuthController {
         };
       }
 
-      const isPasswordCorrect =  await bcrypt.compare(password, user.password as string);
+      const isPasswordCorrect = await bcrypt.compare(
+        password,
+        user.password as string
+      );
       if (!isPasswordCorrect) {
         return {
           statusCode: 401,
@@ -96,7 +101,7 @@ export class AuthController {
       const token = jwt.sign({ id: user?.id, email: user?.email }, SECRET_KEY, {
         expiresIn: "365d",
       });
-      delete user.password
+      delete user.password;
 
       return { message: Messages.LOGIN_SUCCESSFULL, token, user };
     } catch (error) {
@@ -234,6 +239,68 @@ export class AuthController {
       await userRepository.save(user);
       return {
         message: Messages.PASSWORD_RESET,
+      };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static changePassword = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    const AppDataSource = await getDataSource();
+    const userRepository = AppDataSource.getRepository(User);
+    try {
+      await checkAuthentication(req, context, callback);
+      const { password, new_password, confirm_password } = JSON.parse(req.body);
+      const authHeader = req?.headers?.authorization;
+      const token = authHeader.split(" ")[1];
+      const decoded = jwt.decode(token) as IJwtPayload;
+      const user: any = await userRepository.findOne({
+        where: { id: decoded?.id, is_deleted: false },
+      });
+
+      console.log("user", user)
+
+      const isPasswordCorrect = await bcrypt.compare(
+        password,
+        user?.password as string
+      );
+
+      console.log("is password correct", isPasswordCorrect);
+
+      if (!isPasswordCorrect) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({
+            message: Messages.INCORRECT_PASSWORD,
+          }),
+        };
+      }
+
+      if (new_password !== confirm_password) {
+        return {
+          statusCode: 403,
+          body: JSON.stringify({
+            message: Messages.PASSWORD_NOT_SAME,
+          }),
+        };
+      }
+
+      const saltRounds = 10;
+      const salt = bcrypt.genSaltSync(saltRounds);
+      const hashedPassword = bcrypt.hashSync(new_password, salt);
+
+      user.password = hashedPassword;
+      await userRepository.save(user);
+      return {
+        message: Messages.PASSWORD_CHANGE,
       };
     } catch (error) {
       console.log("error", error);

@@ -2,10 +2,12 @@ export const Messages = {
   //Event Messages
   EVENT_CREATED_SUCCESS: "Event created successfully",
   EVENT_FETCHED_SUCCESS: "Events fetched successfully",
+  EVENT_DETAILS_FETCH: "Event details fetched successfully",
   EVENT_DELETED_SUCCESS: "Event deleted successfully",
   EVENT_UPDATED_SUCCESS: "Event updated successfully",
   DUPLICATE_EVENT: "Duplicate Event",
   EVENT_NOT_FOUND: "Event not found",
+  AUTO_SUGGESTION_FETCH: "Auto suggestions fetched successfully",
   //Image upload messages
   IMAGE_UPLOAD_SUCCESS: "Images upload successfully",
   PHOTOS_DELETED_SUCCESS: "Photos deleted successfully",
@@ -21,6 +23,13 @@ export const Messages = {
   RESET_LINK_SENT: "Reset password link has been sent to your email address",
   PASSWORD_NOT_SAME: "Password and confirm password does not match",
   PASSWORD_RESET: "Password has been reset successfully",
+  PASSWORD_CHANGE: "Password has been changed successfully",
+  INCORRECT_PASSWORD: "Current password is incorrect",
   //Category
   CATEGORY_FETCH_SUCCESS: "Categories fetched successfully",
+  //Excluded Loction
+  LOCATION_EXCLUDED: "Location excluded successfully",
+  EXCLUDED_LOCATIONS_FETCHED: "Excluded locations fetched successfully",
+  LOCATION_NOT_FOUND: "Excluded location not found",
+  EXCLUDED_LOCATION_DELETED: "Excluded location deleted successfully"
 };

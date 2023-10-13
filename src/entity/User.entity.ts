@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
 import { Event } from "./Event.entity";
 import { AutoEntryTime } from "../enums/userEnums";
+import { ExcludedList } from "./ExcludedList.entity";
 
 
 @Entity()
@@ -31,5 +32,9 @@ export class User {
 
     @OneToMany(() => Event, (event) => event.user)
     events: Event[]
+
+    @OneToMany(() => ExcludedList, (location) => location.user)
+    excludedLocations: ExcludedList[]
+
 
 }

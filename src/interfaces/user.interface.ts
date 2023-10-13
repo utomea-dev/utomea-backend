@@ -32,3 +32,9 @@ export interface IUser {
   auto_entry_time: number;
   is_deleted: boolean;
 }
+
+
+export interface IJwtPayload {
+  id: number,
+  email: string
+}

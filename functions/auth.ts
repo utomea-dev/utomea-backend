@@ -55,3 +55,14 @@ export const resetPassword = async (event: APIGatewayEvent) => {
     };
   }
 };
+
+export const changePassword = async (event: APIGatewayEvent, context: Context, callback: APIGatewayProxyCallback) => {
+  try {
+    return await AuthController.changePassword(event, context, callback);
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message || "Something went wrong" }),
+    };
+  }
+};
