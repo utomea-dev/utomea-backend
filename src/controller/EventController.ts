@@ -22,42 +22,101 @@ export class EventController {
     context: Context,
     callback: APIGatewayProxyCallback
   ) => {
-    let groupedBy = {};
-    const { limit = 10, skip = 0, verified, date } =
-      req.queryStringParameters || {};
-    console.log("limit", limit, skip, verified, date);
     try {
-      await authenticateJWT(req, context, callback);
+      let groupedBy = {};
+      let result;
+
+      const { limit = 10, skip = 0, verified, date } =
+        req.queryStringParameters || {};
+      await checkAuthentication(req, context, callback);
       const AppDataSource = await getDataSource();
-      const events = await AppDataSource.getRepository(Event)
-        .createQueryBuilder("event")
-        .leftJoinAndSelect("event.photos", "photo", "photo.is_deleted = false")
-        .where("event.userId = :userId", { userId: req.user.id })
-        .andWhere(verified ? "event.verified = :verified" : "1=1", { verified })
-        .andWhere(date ? `DATE_TRUNC('day', "end_timestamp") = :date` : "1=1", {
-          date,
-        })
-        .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
-        // .loadRelationCountAndMap("event.photosCount", "event.photos")
-        .orderBy("event.end_timestamp", "DESC")
-        .skip(skip)
-        .take(limit)
-        .getMany();
 
-      for (let event of events) {
-        event["hero_image"] = event?.photos.length
-          ? event.photos[0]?.url
-          : null;
-        console.log("event", event);
-        const end_date = event?.end_timestamp.toLocaleDateString("en-US");
-        if (!groupedBy[end_date]) {
-          groupedBy[end_date] = [event];
-        } else {
-          groupedBy[end_date].push(event);
+      const mainpulateData = function(events) {
+        groupedBy = {};
+        for (let event of events) {
+          event.photos.sort((a, b) => {
+            return a.id - b.id;
+          });
+          event["hero_image"] = event?.photos.length
+            ? event.photos[0]?.url
+            : null;
+          const end_date = event?.end_timestamp.toLocaleDateString("en-US");
+          if (!groupedBy[end_date]) {
+            groupedBy[end_date] = [event];
+          } else {
+            groupedBy[end_date].push(event);
+          }
         }
-      }
 
-      const result = Object.values(groupedBy);
+        let result = Object.values(groupedBy);
+        return result;
+      };
+      const paginateArray = function(array, skip, limit) {
+        console.log("in paginate", skip, limit, array.length);
+        const startIndex = skip;
+        const endIndex = +skip + +limit;
+
+        if (startIndex >= array.length) {
+          return []; // Return an empty array if the skip value is out of bounds.
+        }
+
+        return array.slice(startIndex, endIndex);
+      };
+
+      if (!date) {
+        const events = await AppDataSource.getRepository(Event)
+          .createQueryBuilder("event")
+          .leftJoinAndSelect(
+            "event.photos",
+            "photo",
+            "photo.is_deleted = false"
+          )
+          .where("event.userId = :userId", { userId: req.user.id })
+          .andWhere(verified ? "event.verified = :verified" : "1=1", {
+            verified,
+          })
+          .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
+          .orderBy("event.end_timestamp", "DESC")
+          .skip(skip)
+          .take(limit)
+          .getMany();
+
+        result = mainpulateData(events);
+      } else {
+        let idx;
+        const allEvents = await AppDataSource.getRepository(Event)
+          .createQueryBuilder("event")
+          .leftJoinAndSelect(
+            "event.photos",
+            "photo",
+            "photo.is_deleted = false"
+          )
+          .where("event.userId = :userId", { userId: req.user.id })
+          .andWhere(verified ? "event.verified = :verified" : "1=1", {
+            verified,
+          })
+          .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
+          .orderBy("event.end_timestamp", "DESC")
+          .getMany();
+
+        result = mainpulateData(allEvents);
+
+        // console.log("In date", date);
+        for (let e of result) {
+          let eventDate = e?.[0]?.end_timestamp.toISOString().split("T")[0];
+          eventDate = new Date(eventDate);
+          eventDate.setHours(0, 0, 0, 0);
+          let dateParams = new Date(date);
+          dateParams.setHours(0, 0, 0, 0);
+          if (dateParams.getTime() === eventDate.getTime()) {
+            idx = result.indexOf(e);
+          }
+        }
+        const splicedArray = result.splice(idx, 1);
+        result.unshift(...splicedArray);
+        result = paginateArray(result.flat(), skip, limit);
+        result = mainpulateData(result);
+      }
 
       const getTotalCount = async () => {
         return await AppDataSource.getRepository(Event)
@@ -81,13 +140,16 @@ export class EventController {
         getUnverifiedCount(),
       ]);
 
-      return {
-        message: Messages.EVENT_FETCHED_SUCCESS,
-        data: result,
-        totalCount,
-        unverifiedCount,
-      };
+      // setTimeout(() => {
+        return {
+          message: Messages.EVENT_FETCHED_SUCCESS,
+          data: result,
+          totalCount,
+          unverifiedCount,
+        };
+      // }, 4000);
     } catch (error) {
+      console.log("error in get events", error);
       return createErrorResponse(
         error?.status || 500,
         error.message || "Internal Server Error"
@@ -102,8 +164,8 @@ export class EventController {
   ) => {
     try {
       console.log("Create Event triggered");
-        await checkAuthentication(req, context, callback);
-        const AppDataSource = await getDataSource();
+      await checkAuthentication(req, context, callback);
+      const AppDataSource = await getDataSource();
       const eventRepository = AppDataSource.getRepository(Event);
       const {
         latitude,
@@ -117,6 +179,7 @@ export class EventController {
         description,
         rating,
         verified,
+        event_type,
       } = JSON.parse(req.body);
       const event = new Event();
       event.latitude = latitude;
@@ -131,6 +194,7 @@ export class EventController {
       event.rating = rating ? rating : null;
       event.verified = verified ? verified : false;
       event.user = req.user?.id;
+      event.event_type = event_type;
       await eventRepository.save(event);
       return { message: Messages.EVENT_CREATED_SUCCESS, body: event };
     } catch (error) {
@@ -308,13 +372,14 @@ export class EventController {
       const uploadPromises = files.map(async (file) => {
         const s3Params = {
           Bucket: "utomea-events",
-          Key: file?.filename?.filename,
+          Key: `${file?.filename?.filename.replace(/ /g, "")}`,
           Body: file?.content,
           ContentType: file?.filename?.mimeType,
         };
         const command = new PutObjectCommand(s3Params);
         await s3.send(command);
       });
+
       await Promise.all(uploadPromises);
       let responseArray: any = [];
 

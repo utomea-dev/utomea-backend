@@ -17,7 +17,7 @@ const AppDataSource = new DataSource({
   // password: "NAJYHMFOnM9bvSWQSy9T",
   // database: "utomea-dev",
   database: "react-native-serverless",
-  synchronize: true,
+  synchronize: false,
   logging: false,
   entities: [Event, Photo, User, Category, ExcludedList],
   migrations: [],
@@ -25,6 +25,10 @@ const AppDataSource = new DataSource({
   // ssl: {
   //   rejectUnauthorized: false
   // }
+  // poolSize: 100,
+  // poolErrorHandler(err) {
+  //   console.log("pool error", err)
+  // },
 });
 
 AppDataSource.initialize()
@@ -34,10 +38,11 @@ AppDataSource.initialize()
   .catch((error) => console.log(error));
 
 export const getDataSource = (delay = 3000): Promise<DataSource> => {
-  if (AppDataSource.isInitialized) return Promise.resolve(AppDataSource);
+  // if (AppDataSource.isInitialized) return Promise.resolve(AppDataSource);
 
   return new Promise((resolve, reject) => {
     setTimeout(() => {
+      console.log("xxxxxx", AppDataSource.isInitialized)
       if (AppDataSource.isInitialized) resolve(AppDataSource);
       else reject("Failed to create connection with database");
     }, delay);

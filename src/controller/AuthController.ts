@@ -17,11 +17,17 @@ import {
   IUserSignIn,
   IUserSignUp,
 } from "../interfaces/user.interface";
-import { getSecretFromSecretManager } from "../utilities/SecretManager";
+import {
+  getAccessKeyFromSecretManager,
+  getAwsSecretKeyFromSecretManager,
+  getSecretFromSecretManager,
+} from "../utilities/SecretManager";
 import createErrorResponse from "../utilities/createErrorResponse";
 import { run } from "../utilities/mailerService";
 import { authenticateJWT } from "../middleware/verifyToken";
 import { checkAuthentication } from "../middleware/checkAuth";
+import { PutObjectCommand, S3Client, S3ClientConfig } from "@aws-sdk/client-s3";
+import { parser } from "../utilities/formParser";
 
 require("dotenv").config();
 
@@ -113,6 +119,76 @@ export class AuthController {
     }
   };
 
+  // public static updateUserDetails = async (
+  //   req,
+  //   context: Context,
+  //   callback: APIGatewayProxyCallback
+  // ) => {
+  //   try {
+  //     await authenticateJWT(req, context, callback);
+  //     if (!req?.user) {
+  //       return {
+  //         statusCode: 401,
+  //         body: JSON.stringify({
+  //           message: Messages.UNAUTHORIZED,
+  //         }),
+  //       };
+  //     }
+  //     const AppDataSource = await getDataSource();
+  //     const userRepository = AppDataSource.getRepository(User);
+  //     const userId = +req?.user?.id;
+  //     const user = await userRepository.findOne({
+  //       where: { id: userId, is_deleted: false },
+  //     });
+  //     if (!user) {
+  //       return {
+  //         statusCode: 404,
+  //         body: JSON.stringify({
+  //           message: Messages.USER_NOT_EXIST,
+  //         }),
+  //       };
+  //     }
+
+  //     const s3Config: S3ClientConfig = {
+  //       region: "us-east-2",
+  //       credentials: {
+  //         accessKeyId: await getAccessKeyFromSecretManager(),
+  //         secretAccessKey: await getAwsSecretKeyFromSecretManager(),
+  //       },
+  //     };
+  //     const s3 = new S3Client(s3Config);
+  //     const MAX_SIZE = 6000000; // 6MB
+  //     const formData: any = await parser(req, MAX_SIZE);
+  //     const profile_pic = formData.files[0];
+  //     const { name, privacy_policy_accepted, auto_entry_time } = formData;
+  //     user.name = name;
+  //     user.privacy_policy_accepted = privacy_policy_accepted;
+  //     user.auto_entry_time = auto_entry_time;
+
+  //     if (profile_pic) {
+  //       const s3Params = {
+  //         Bucket: "utomea-events",
+  //         Key: `profile_pic/${profile_pic?.filename?.filename.replace(/ /g, "")}`,
+  //         Body: profile_pic?.content,
+  //         ContentType: profile_pic?.filename?.mimeType,
+  //       };
+  //       const command = new PutObjectCommand(s3Params);
+  //       await s3.send(command);
+  //       let url = `https://utomea-events.s3.us-east-2.amazonaws.com/profile_pic/${profile_pic?.filename?.filename.replace(/ /g, "")}`;
+  //       user.profile_pic = url
+  //     }
+
+  //     await userRepository.save(user);
+  //     return { message: Messages.USER_UPDATED_SUCCESSFULLY, data: user };
+  //   } catch (error) {
+  //     console.log("error", error);
+  //     return createErrorResponse(
+  //       error?.status || 500,
+  //       error.message || "Internal Server Error"
+  //     );
+  //   }
+  // };
+
   public static updateUserDetails = async (
     req,
     context: Context,
@@ -160,7 +236,6 @@ export class AuthController {
       );
     }
   };
-
   public static forgotPassword = async (req: APIGatewayProxyEvent) => {
     const SECRET_KEY: string = await getSecretFromSecretManager();
     const AppDataSource = await getDataSource();
@@ -266,7 +341,7 @@ export class AuthController {
         where: { id: decoded?.id, is_deleted: false },
       });
 
-      console.log("user", user)
+      console.log("user", user);
 
       const isPasswordCorrect = await bcrypt.compare(
         password,

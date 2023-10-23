@@ -30,6 +30,9 @@ export class User {
     @Column({ type: "boolean", default: false })
     is_deleted: boolean; 
 
+    // @Column("varchar", {nullable: true})
+    // profile_pic: string;
+
     @OneToMany(() => Event, (event) => event.user)
     events: Event[]
 

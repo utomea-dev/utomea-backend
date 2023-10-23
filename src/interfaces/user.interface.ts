@@ -15,6 +15,7 @@ export interface IUpdateUserDetails {
   name: string;
   privacy_policy_accepted: boolean;
   auto_entry_time: AutoEntryTime;
+  // profile_pic?: string;
 }
 
 export interface IResetPassword {

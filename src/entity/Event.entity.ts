@@ -9,6 +9,7 @@ import {
 import { Photo } from "./Photo.entity";
 import { User } from "./User.entity";
 import { Category } from "./Category.entity";
+import { EventType } from "../enums/eventEnums";
 
 @Entity()
 @Index(["latitude", "longitude", "begin_timestamp", "user"], { unique: true })
@@ -54,6 +55,9 @@ export class Event {
 
   @Column({ type: "boolean", default: false })
   is_deleted: boolean;
+
+  @Column({type: "enum", enum: EventType, nullable: true})
+  event_type: EventType
 
   @ManyToOne(
     () => User,
