@@ -1,10 +1,9 @@
-import { getDataSource } from "../../data-source";
+import { getDatabaseConnection } from "../../data-source";
 import { Event } from "../entity/Event.entity";
 import { Photo } from "../entity/Photo.entity";
 import { Messages } from "../utilities/Messages";
 import { S3Client, PutObjectCommand, S3ClientConfig } from "@aws-sdk/client-s3";
 import { parser } from "../utilities/formParser";
-import { authenticateJWT } from "../middleware/verifyToken";
 import { APIGatewayProxyCallback, Context } from "aws-lambda";
 import createErrorResponse from "../utilities/createErrorResponse";
 import {
@@ -13,6 +12,8 @@ import {
 } from "../utilities/SecretManager";
 import { In } from "typeorm";
 import { checkAuthentication } from "../middleware/checkAuth";
+import { User } from "../entity/User.entity";
+import { IUser } from "../interfaces/user.interface";
 
 require("dotenv").config();
 
@@ -29,8 +30,7 @@ export class EventController {
       const { limit = 10, skip = 0, verified, date } =
         req.queryStringParameters || {};
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
-
+      const AppDataSource = await getDatabaseConnection();
       const mainpulateData = function(events) {
         groupedBy = {};
         for (let event of events) {
@@ -135,19 +135,27 @@ export class EventController {
           .getCount();
       };
 
-      const [totalCount, unverifiedCount] = await Promise.all([
+      const newUser = async () => {
+        const user = await AppDataSource.getRepository(User).findOne({
+          where: { id: req?.user?.id, is_deleted: false },
+          select: { is_new_user: true },
+        });
+        return user;
+      };
+
+      const [totalCount, unverifiedCount, isNewUser] = await Promise.all([
         getTotalCount(),
         getUnverifiedCount(),
+        newUser(),
       ]);
 
-      // setTimeout(() => {
-        return {
-          message: Messages.EVENT_FETCHED_SUCCESS,
-          data: result,
-          totalCount,
-          unverifiedCount,
-        };
-      // }, 4000);
+      return {
+        message: Messages.EVENT_FETCHED_SUCCESS,
+        data: result,
+        totalCount,
+        unverifiedCount,
+        isNewUser: isNewUser?.is_new_user,
+      };
     } catch (error) {
       console.log("error in get events", error);
       return createErrorResponse(
@@ -163,10 +171,14 @@ export class EventController {
     callback: APIGatewayProxyCallback
   ) => {
     try {
-      console.log("Create Event triggered");
+      console.log("Create Event triggered", req?.body);
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const eventRepository = AppDataSource.getRepository(Event);
+      const userRepository = AppDataSource.getRepository(User);
+      const user: IUser | null = await userRepository.findOne({
+        where: { id: req?.user?.id, is_deleted: false },
+      });
       const {
         latitude,
         longitude,
@@ -178,7 +190,6 @@ export class EventController {
         tags,
         description,
         rating,
-        verified,
         event_type,
       } = JSON.parse(req.body);
       const event = new Event();
@@ -192,10 +203,16 @@ export class EventController {
       event.title = title;
       event.tags = tags;
       event.rating = rating ? rating : null;
-      event.verified = verified ? verified : false;
+      event.verified = user?.auto_verification ? true : false;
       event.user = req.user?.id;
       event.event_type = event_type;
       await eventRepository.save(event);
+
+      if (user!.is_new_user === true) {
+        user!.is_new_user = false;
+        await userRepository.save(user as IUser);
+      }
+
       return { message: Messages.EVENT_CREATED_SUCCESS, body: event };
     } catch (error) {
       console.log("error in catch block", error);
@@ -214,7 +231,7 @@ export class EventController {
     callback: APIGatewayProxyCallback
   ) => {
     await checkAuthentication(req, context, callback);
-    const AppDataSource = await getDataSource();
+    const AppDataSource = await getDatabaseConnection();
     const eventRepository = AppDataSource.getRepository(Event);
     try {
       const id = +req?.pathParameters?.id;
@@ -251,7 +268,7 @@ export class EventController {
     callback: APIGatewayProxyCallback
   ) => {
     await checkAuthentication(req, context, callback);
-    const AppDataSource = await getDataSource();
+    const AppDataSource = await getDatabaseConnection();
     const eventRepository = AppDataSource.getRepository(Event);
     try {
       const id = +req?.pathParameters?.id;
@@ -287,17 +304,20 @@ export class EventController {
   ) => {
     try {
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
       console.log("reqqq", req);
       const { start_date, end_date, category, rating, search } = JSON.parse(
         req.body
       );
-      console.log("start date", start_date, end_date, category);
-
+      console.log("start date", search);
+      const AppDataSource = await getDatabaseConnection();
       const events = await AppDataSource.getRepository(Event)
         .createQueryBuilder("event")
         .leftJoinAndSelect("event.photos", "photo")
-        .leftJoinAndSelect("event.category", "category")
+        .leftJoinAndSelect(
+          "event.category",
+          "category",
+          `event.userId = ${req.user.id}`
+        )
         .where("event.userId = :userId", { userId: req.user.id })
         .andWhere(
           start_date && end_date
@@ -306,18 +326,23 @@ export class EventController {
           { start_date, end_date }
         )
         .andWhere(
-          category.length ? "event.category IN (:...category)" : `1=1`,
+          category?.length ? "event.category IN (:...category)" : `1=1`,
           { category }
         )
-        .andWhere(rating.length ? "event.rating IN (:...rating)" : `1=1`, {
+        .andWhere(rating?.length ? "event.rating IN (:...rating)" : `1=1`, {
           rating,
         })
         .andWhere(
           search
-            ? "event.title = :search OR event.location = :search OR category.name = :search"
+            ? "(LOWER(event.title) = :search OR LOWER(event.location) = :search OR LOWER(array_to_string(event.tags, ',')) LIKE :new) AND event.userId = :userId"
             : `1=1`,
-          { search }
+          {
+            search: search?.toLowerCase(),
+            new: `%${search.toLowerCase()}%`,
+            userId: req?.user?.id,
+          }
         )
+
         .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
         .loadRelationCountAndMap("event.photosCount", "event.photos")
         .orderBy("event.end_timestamp", "DESC")
@@ -349,7 +374,7 @@ export class EventController {
     const MAX_SIZE = 6000000; // 6MB
 
     console.log("Upload images function triggered");
-    const AppDataSource = await getDataSource();
+    const AppDataSource = await getDatabaseConnection();
     const eventRepository = AppDataSource.getRepository(Event);
     const photoRepository = AppDataSource.getRepository(Photo);
     try {
@@ -415,7 +440,7 @@ export class EventController {
   ) => {
     try {
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const PhotoRepository = AppDataSource.getRepository(Photo);
       const { photoIds } = JSON.parse(req?.body);
       const photos = await PhotoRepository.find({
@@ -443,7 +468,7 @@ export class EventController {
   ) => {
     try {
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const eventRepository = AppDataSource.getRepository(Event);
       const id = +req?.pathParameters?.id;
       const event = await eventRepository
@@ -481,8 +506,9 @@ export class EventController {
     callback: APIGatewayProxyCallback
   ) => {
     try {
+      let finalResult: string[] = [];
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const eventRepository = AppDataSource.getRepository(Event);
       const { search } = JSON.parse(req.body);
 
@@ -494,20 +520,6 @@ export class EventController {
         })
         .andWhere("event.is_deleted = false")
         .select("event.title")
-        .getMany();
-
-      const categorySearch = await eventRepository
-        .createQueryBuilder("event")
-        .leftJoinAndSelect("event.category", "category")
-        .where(
-          "event.userId = :userId AND LOWER(category.name) like :category",
-          {
-            userId: req.user.id,
-            category: `%${search.toLowerCase()}%`,
-          }
-        )
-        .andWhere("event.is_deleted = false")
-        .select(["event.id", "category.name"])
         .getMany();
 
       const locationSearch = await eventRepository
@@ -523,13 +535,24 @@ export class EventController {
         .select("event.location")
         .getMany();
 
-      let finalCategorySearch: string[] = [];
+        const tagsSearch = await eventRepository
+        .createQueryBuilder("event")
+        .where(
+          "event.userId = :userId AND LOWER(array_to_string(event.tags, ',')) LIKE :new",
+          {
+            userId: req.user.id,
+            new: `%${search.toLowerCase()}%`,
+          }
+        )
+        .andWhere("event.is_deleted = false")
+        .select("event.tags")
+        .getMany();
+
       let finalTitleSearch: any[] = [];
       let finalLocationSearch: any[] = [];
+      let finalTagSearch: any[] = [];
 
-      for (let e of categorySearch) {
-        finalCategorySearch.push(e.category.name);
-      }
+
 
       for (let e of titleSearch) {
         finalTitleSearch.push(Object.values(e));
@@ -538,15 +561,30 @@ export class EventController {
       for (let e of locationSearch) {
         finalLocationSearch.push(Object.values(e));
       }
-      const finalResult = [
-        ...finalTitleSearch,
-        ...finalLocationSearch,
-        ...finalCategorySearch,
-      ];
+
+      for (let e of tagsSearch) {
+        finalTagSearch.push(Object.values(e));
+      }
+
+      finalTagSearch = finalTagSearch.flat().flat().filter(e => e.toLowerCase().indexOf(search.toLowerCase()) > -1)
+      console.log("tagsss", finalTagSearch)
+
+      let mergedArray = [...finalTitleSearch, ...finalLocationSearch, ...finalTagSearch];
+
+      for (let e of mergedArray.flat()) {
+        const isPresent = finalResult.includes(e.toLowerCase());
+        if (!isPresent) {
+          finalResult.push(e.toLowerCase());
+        }
+      }
+
+      finalResult = finalResult.map(
+        (e) => e.charAt(0).toUpperCase() + e.slice(1)
+      );
 
       return {
         message: Messages.AUTO_SUGGESTION_FETCH,
-        data: finalResult.flat(),
+        data: finalResult,
       };
     } catch (error) {
       console.log("error", error);

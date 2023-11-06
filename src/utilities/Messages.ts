@@ -18,6 +18,11 @@ export const Messages = {
   LOGIN_SUCCESSFULL: "User login successfull",
   USER_NOT_EXIST: "User does not exist",
   USER_UPDATED_SUCCESSFULLY: "User details updated successfully",
+  PROFILE_PIC_UPLOADED: "Profile pic uploaded successfully",
+  PROFILE_PIC_DELETED: "Profile pic deleted successfully",
+  USER_DETAILS_FETCHED: "User details fetched successfully",
+  EMAIL_ALREADY_REGISTERED: "Email address already registered",
+  EMAIL_LINKED_TO_SOCIAL: "This email address is linked to your social account",
   //Auth
   UNAUTHORIZED: "Unauthorized",
   RESET_LINK_SENT: "Reset password link has been sent to your email address",
@@ -25,6 +30,7 @@ export const Messages = {
   PASSWORD_RESET: "Password has been reset successfully",
   PASSWORD_CHANGE: "Password has been changed successfully",
   INCORRECT_PASSWORD: "Current password is incorrect",
+  VERIFICATION_CODE_SENT: "Verification code has been sent to your email address",
   //Category
   CATEGORY_FETCH_SUCCESS: "Categories fetched successfully",
   //Excluded Loction

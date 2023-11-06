@@ -1,4 +1,4 @@
-import { AutoEntryTime } from "../enums/userEnums";
+import { ACCOUNT_TYPE, AutoEntryTime } from "../enums/userEnums";
 
 export interface IUserSignIn {
   email: string;
@@ -15,6 +15,7 @@ export interface IUpdateUserDetails {
   name: string;
   privacy_policy_accepted: boolean;
   auto_entry_time: AutoEntryTime;
+  auto_verification: boolean
   // profile_pic?: string;
 }
 
@@ -32,6 +33,12 @@ export interface IUser {
   privacy_policy_accepted: boolean;
   auto_entry_time: number;
   is_deleted: boolean;
+  is_new_user: boolean;
+  auto_verification: boolean;
+  account_type: ACCOUNT_TYPE;
+  profile_pic: any;
+  verificationCode: any;
+  verificationCodeExpiry: any
 }
 
 

@@ -1,7 +1,7 @@
 import { APIGatewayProxyCallback, Context } from "aws-lambda";
 import createErrorResponse from "../utilities/createErrorResponse";
 import { checkAuthentication } from "../middleware/checkAuth";
-import { getDataSource } from "../../data-source";
+import { getDatabaseConnection } from "../../data-source";
 import { ExcludedList } from "../entity/ExcludedList.entity";
 import { IExcludedLocation } from "../interfaces/excluded.interface";
 import { Messages } from "../utilities/Messages";
@@ -14,7 +14,7 @@ export class ExcludedLocationController {
   ) => {
     try {
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const excludedRepository = AppDataSource.getRepository(ExcludedList);
       const {
         identifier,
@@ -46,14 +46,12 @@ export class ExcludedLocationController {
   ) => {
     try {
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const excludedRepository = AppDataSource.getRepository(ExcludedList);
       const result = await excludedRepository
         .createQueryBuilder("excludedLocation")
         .where("excludedLocation.userId = :userId", { userId: req.user.id })
-        .andWhere("excludedLocation.is_deleted = :is_deleted", {
-          is_deleted: false,
-        })
+        .orderBy("id", "DESC")
         .getMany();
 
       return { message: Messages.EXCLUDED_LOCATIONS_FETCHED, data: result };
@@ -73,11 +71,11 @@ export class ExcludedLocationController {
   ) => {
     try {
       await checkAuthentication(req, context, callback);
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const excludedRepository = AppDataSource.getRepository(ExcludedList);
       const id = +req?.pathParameters?.id;
       const excludedLocation = await excludedRepository.findOne({
-        where: { id, is_deleted: false },
+        where: { id },
       });
 
       if (!excludedLocation) {
@@ -88,8 +86,13 @@ export class ExcludedLocationController {
           }),
         };
       }
-      excludedLocation.is_deleted = true
-      await excludedRepository.save(excludedLocation)
+
+      await excludedRepository
+        .createQueryBuilder("excludedLocation")
+        .delete()
+        .from(ExcludedList)
+        .where("id = :id", { id })
+        .execute();
       return { message: Messages.EXCLUDED_LOCATION_DELETED };
     } catch (error) {
       return createErrorResponse(

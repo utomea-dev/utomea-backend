@@ -64,12 +64,19 @@ functions:
       - httpApi:
           path: /search/autosuggest
           method: post
-  
+
   getEventDetails:
     handler: functions/events.getEventDetails
     events:
       - httpApi:
           path: /events/{id}
+          method: get
+
+  getUserDetails:
+    handler: functions/auth.getUserDetails
+    events:
+      - httpApi:
+          path: /user/user-details
           method: get
 
   uploadImages:
@@ -81,13 +88,21 @@ functions:
     environment:
       BUCKET_NAME: utomea-events
 
+  uploadProfilePic:
+    handler: functions/auth.uploadProfilePic
+    events:
+      - httpApi:
+          path: /user/upload-profile-pic
+          method: post
+    environment:
+      BUCKET_NAME: utomea-events
+
   deletePhotos:
     handler: functions/photo.deletePhotos
     events:
       - httpApi:
           path: /photos
           method: delete
-
 
   userSignup:
     handler: functions/auth.userSignup
@@ -96,11 +111,32 @@ functions:
           path: /user/signup
           method: post
 
+  sendVerificationEmail:
+    handler: functions/auth.sendVerificationEmail
+    events:
+      - httpApi:
+          path: /user/send-verification-email
+          method: post
+
+  verifyOTP:
+    handler: functions/auth.verifyOTP
+    events:
+      - httpApi:
+          path: /user/verify-otp
+          method: post
+
   userSignIn:
     handler: functions/auth.userSignIn
     events:
       - httpApi:
           path: /user/signin
+          method: post
+
+  socialLogin:
+    handler: functions/auth.socialLogin
+    events:
+      - httpApi:
+          path: /auth/social-login
           method: post
 
   updateUser:
@@ -137,7 +173,7 @@ functions:
       - httpApi:
           path: /category
           method: get
-  
+
   createExcludedLocation:
     handler: functions/excludedList.createExcludedLocation
     events:
@@ -151,12 +187,19 @@ functions:
       - httpApi:
           path: /excluded-locations
           method: get
-  
+
   deleteExcludedLocation:
     handler: functions/excludedList.deleteExcludedLocation
     events:
       - httpApi:
           path: /excluded-location/{id}
+          method: delete
+
+  deleteProfilePic:
+    handler: functions/auth.deleteProfilePic
+    events:
+      - httpApi:
+          path: /user/delete-profile-pic
           method: delete
 
   verify-token:

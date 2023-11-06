@@ -2,7 +2,7 @@ import { APIGatewayProxyCallback, Context } from "aws-lambda";
 import createErrorResponse from "../utilities/createErrorResponse";
 import { authenticateJWT } from "../middleware/verifyToken";
 import { Messages } from "../utilities/Messages";
-import { getDataSource } from "../../data-source";
+import { getDatabaseConnection } from "../../data-source";
 import { Category } from "../entity/Category.entity";
 
 export class CategoryController {
@@ -21,8 +21,8 @@ export class CategoryController {
           }),
         };
       }
+      const AppDataSource = await getDatabaseConnection()
 
-      const AppDataSource = await getDataSource();
       const categoryRepository = AppDataSource.getRepository(Category);
       const categories = await categoryRepository.find({});
       return {

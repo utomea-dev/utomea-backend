@@ -19,9 +19,6 @@ export class ExcludedList {
   @Column("varchar", { length: 100 })
   longitude: string;
 
-  @Column({ type: "boolean", default: false })
-  is_deleted: boolean;
-
   @ManyToOne(
     () => User,
     (user) => user.excludedLocations

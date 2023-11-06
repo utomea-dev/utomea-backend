@@ -1,4 +1,4 @@
-import { getDataSource } from "../../data-source";
+import { getDatabaseConnection } from "../../data-source";
 import { User } from "../entity/User.entity";
 import { Messages } from "../utilities/Messages";
 import * as bcrypt from "bcryptjs";
@@ -23,11 +23,12 @@ import {
   getSecretFromSecretManager,
 } from "../utilities/SecretManager";
 import createErrorResponse from "../utilities/createErrorResponse";
-import { run } from "../utilities/mailerService";
+import { run, sendCode } from "../utilities/mailerService";
 import { authenticateJWT } from "../middleware/verifyToken";
 import { checkAuthentication } from "../middleware/checkAuth";
 import { PutObjectCommand, S3Client, S3ClientConfig } from "@aws-sdk/client-s3";
 import { parser } from "../utilities/formParser";
+import { ACCOUNT_TYPE } from "../enums/userEnums";
 
 require("dotenv").config();
 
@@ -35,7 +36,7 @@ export class AuthController {
   public static userSignup = async (req: APIGatewayProxyEvent) => {
     try {
       const SECRET_KEY = await getSecretFromSecretManager();
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const userRepository = AppDataSource.getRepository(User);
       const { email, password }: IUserSignUp = JSON.parse(req.body || "{}");
       const userExists = await userRepository.findOne({
@@ -76,11 +77,11 @@ export class AuthController {
   public static userSignIn = async (req: APIGatewayProxyEvent) => {
     try {
       const SECRET_KEY = await getSecretFromSecretManager();
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const userRepository = AppDataSource.getRepository(User);
       const { email, password }: IUserSignIn = JSON.parse(req.body || "{}");
       const user: IUser | null = await userRepository.findOne({
-        where: { email },
+        where: { email, is_deleted: false },
       });
       if (!user) {
         return {
@@ -119,75 +120,71 @@ export class AuthController {
     }
   };
 
-  // public static updateUserDetails = async (
-  //   req,
-  //   context: Context,
-  //   callback: APIGatewayProxyCallback
-  // ) => {
-  //   try {
-  //     await authenticateJWT(req, context, callback);
-  //     if (!req?.user) {
-  //       return {
-  //         statusCode: 401,
-  //         body: JSON.stringify({
-  //           message: Messages.UNAUTHORIZED,
-  //         }),
-  //       };
-  //     }
-  //     const AppDataSource = await getDataSource();
-  //     const userRepository = AppDataSource.getRepository(User);
-  //     const userId = +req?.user?.id;
-  //     const user = await userRepository.findOne({
-  //       where: { id: userId, is_deleted: false },
-  //     });
-  //     if (!user) {
-  //       return {
-  //         statusCode: 404,
-  //         body: JSON.stringify({
-  //           message: Messages.USER_NOT_EXIST,
-  //         }),
-  //       };
-  //     }
+  public static uploadProfilePic = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await authenticateJWT(req, context, callback);
+      if (!req?.user) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({
+            message: Messages.UNAUTHORIZED,
+          }),
+        };
+      }
+      const AppDataSource = await getDatabaseConnection();
+      const userRepository = AppDataSource.getRepository(User);
+      const userId = +req?.user?.id;
+      const user = await userRepository.findOne({
+        where: { id: userId, is_deleted: false },
+      });
+      if (!user) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
 
-  //     const s3Config: S3ClientConfig = {
-  //       region: "us-east-2",
-  //       credentials: {
-  //         accessKeyId: await getAccessKeyFromSecretManager(),
-  //         secretAccessKey: await getAwsSecretKeyFromSecretManager(),
-  //       },
-  //     };
-  //     const s3 = new S3Client(s3Config);
-  //     const MAX_SIZE = 6000000; // 6MB
-  //     const formData: any = await parser(req, MAX_SIZE);
-  //     const profile_pic = formData.files[0];
-  //     const { name, privacy_policy_accepted, auto_entry_time } = formData;
-  //     user.name = name;
-  //     user.privacy_policy_accepted = privacy_policy_accepted;
-  //     user.auto_entry_time = auto_entry_time;
+      const s3Config: S3ClientConfig = {
+        region: "us-east-2",
+        credentials: {
+          accessKeyId: await getAccessKeyFromSecretManager(),
+          secretAccessKey: await getAwsSecretKeyFromSecretManager(),
+        },
+      };
+      const s3 = new S3Client(s3Config);
+      const MAX_SIZE = 6000000; // 6MB
+      const formData: any = await parser(req, MAX_SIZE);
+      const profile_pic = formData.files[0];
+      const s3Params = {
+        Bucket: "utomea-events",
+        Key: `profile_pic/${profile_pic?.filename?.filename.replace(/ /g, "")}`,
+        Body: profile_pic?.content,
+        ContentType: profile_pic?.filename?.mimeType,
+      };
+      const command = new PutObjectCommand(s3Params);
+      await s3.send(command);
+      let url = `https://utomea-events.s3.us-east-2.amazonaws.com/profile_pic/${profile_pic?.filename?.filename.replace(
+        / /g,
+        ""
+      )}`;
+      user.profile_pic = url;
 
-  //     if (profile_pic) {
-  //       const s3Params = {
-  //         Bucket: "utomea-events",
-  //         Key: `profile_pic/${profile_pic?.filename?.filename.replace(/ /g, "")}`,
-  //         Body: profile_pic?.content,
-  //         ContentType: profile_pic?.filename?.mimeType,
-  //       };
-  //       const command = new PutObjectCommand(s3Params);
-  //       await s3.send(command);
-  //       let url = `https://utomea-events.s3.us-east-2.amazonaws.com/profile_pic/${profile_pic?.filename?.filename.replace(/ /g, "")}`;
-  //       user.profile_pic = url
-  //     }
-
-  //     await userRepository.save(user);
-  //     return { message: Messages.USER_UPDATED_SUCCESSFULLY, data: user };
-  //   } catch (error) {
-  //     console.log("error", error);
-  //     return createErrorResponse(
-  //       error?.status || 500,
-  //       error.message || "Internal Server Error"
-  //     );
-  //   }
-  // };
+      await userRepository.save(user);
+      return { message: Messages.PROFILE_PIC_UPLOADED };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
 
   public static updateUserDetails = async (
     req,
@@ -204,7 +201,7 @@ export class AuthController {
           }),
         };
       }
-      const AppDataSource = await getDataSource();
+      const AppDataSource = await getDatabaseConnection();
       const userRepository = AppDataSource.getRepository(User);
       const userId = +req?.user?.id;
       const user = await userRepository.findOne({
@@ -222,10 +219,12 @@ export class AuthController {
         name,
         privacy_policy_accepted,
         auto_entry_time,
+        auto_verification,
       }: IUpdateUserDetails = JSON.parse(req.body);
       user.name = name;
       user.privacy_policy_accepted = privacy_policy_accepted;
       user.auto_entry_time = auto_entry_time;
+      user.auto_verification = auto_verification;
       await userRepository.save(user);
       return { message: Messages.USER_UPDATED_SUCCESSFULLY };
     } catch (error) {
@@ -238,7 +237,7 @@ export class AuthController {
   };
   public static forgotPassword = async (req: APIGatewayProxyEvent) => {
     const SECRET_KEY: string = await getSecretFromSecretManager();
-    const AppDataSource = await getDataSource();
+    const AppDataSource = await getDatabaseConnection();
     const userRepository = AppDataSource.getRepository(User);
     try {
       const { email } = JSON.parse(req.body || "");
@@ -250,6 +249,15 @@ export class AuthController {
           statusCode: 404,
           body: JSON.stringify({
             message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+
+      if (user.account_type === ACCOUNT_TYPE.SOCIAL_ACCOUNT) {
+        return {
+          statusCode: 403,
+          body: JSON.stringify({
+            message: Messages.EMAIL_LINKED_TO_SOCIAL,
           }),
         };
       }
@@ -273,8 +281,8 @@ export class AuthController {
 
   public static resetPassword = async (req: APIGatewayProxyEvent) => {
     const SECRET_KEY: string = await getSecretFromSecretManager();
+    const AppDataSource = await getDatabaseConnection();
 
-    const AppDataSource = await getDataSource();
     const userRepository = AppDataSource.getRepository(User);
     try {
       const token: string = req?.pathParameters?.token as string;
@@ -329,7 +337,7 @@ export class AuthController {
     context: Context,
     callback: APIGatewayProxyCallback
   ) => {
-    const AppDataSource = await getDataSource();
+    const AppDataSource = await getDatabaseConnection();
     const userRepository = AppDataSource.getRepository(User);
     try {
       await checkAuthentication(req, context, callback);
@@ -377,6 +385,242 @@ export class AuthController {
       return {
         message: Messages.PASSWORD_CHANGE,
       };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static getUserDetails = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    const AppDataSource = await getDatabaseConnection();
+    const userRepository = AppDataSource.getRepository(User);
+    try {
+      await checkAuthentication(req, context, callback);
+      console.log("reqqqq", req);
+      const user: IUser | null = await userRepository.findOne({
+        where: { id: req?.user?.id, is_deleted: false },
+      });
+      console.log("user", user);
+      if (!user) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+
+      delete user.password;
+
+      return {
+        message: Messages.USER_DETAILS_FETCHED,
+        data: user,
+      };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static socialLogin = async (req: APIGatewayProxyEvent) => {
+    try {
+      const SECRET_KEY = await getSecretFromSecretManager();
+      const AppDataSource = await getDatabaseConnection();
+      const userRepository = AppDataSource.getRepository(User);
+      const { email } = JSON.parse(req.body || "{}");
+      const user: IUser | null = await userRepository.findOne({
+        where: {
+          email,
+          is_deleted: false,
+          account_type: ACCOUNT_TYPE.NORMAL_EMAIL,
+        },
+      });
+
+      if (user) {
+        return {
+          statusCode: 403,
+          body: JSON.stringify({
+            message: Messages.EMAIL_ALREADY_REGISTERED,
+          }),
+        };
+      }
+
+      const alreadyExists: IUser | null = await userRepository.findOne({
+        where: {
+          email,
+          account_type: ACCOUNT_TYPE.SOCIAL_ACCOUNT,
+          is_deleted: false,
+        },
+      });
+      if (alreadyExists) {
+        const token = jwt.sign(
+          { id: alreadyExists?.id, email: alreadyExists?.email },
+          SECRET_KEY,
+          { expiresIn: "365d" }
+        );
+        delete alreadyExists.password;
+        return {
+          message: Messages.LOGIN_SUCCESSFULL,
+          token,
+          user: alreadyExists,
+        };
+      }
+
+      const newUser: IUser = new User();
+      newUser.email = email;
+      newUser.account_type = ACCOUNT_TYPE.SOCIAL_ACCOUNT;
+      await userRepository.save(newUser);
+      const token = jwt.sign(
+        { id: newUser?.id, email: newUser?.email },
+        SECRET_KEY,
+        {
+          expiresIn: "365d",
+        }
+      );
+
+      delete newUser.password;
+      return { message: Messages.LOGIN_SUCCESSFULL, token, user: newUser };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static deleteProfilePic = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await checkAuthentication(req, context, callback);
+      const AppDataSource = await getDatabaseConnection();
+      const userRepository = AppDataSource.getRepository(User);
+      const userId = +req?.user?.id;
+      const user: IUser | null = await userRepository.findOne({
+        where: { id: userId, is_deleted: false },
+      });
+      if (!user) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+      user.profile_pic = null;
+      await userRepository.save(user);
+      return { message: Messages.PROFILE_PIC_DELETED };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static sendVerificationEmail = async (req) => {
+    try {
+      const AppDataSource = await getDatabaseConnection();
+      const userRepository = AppDataSource.getRepository(User);
+      const { email } = JSON.parse(req.body);
+      const verificationCode = Math.floor(
+        100000 + Math.random() * 900000
+      ).toString();
+      const verificationCodeExpiry = new Date();
+      verificationCodeExpiry.setMinutes(
+        verificationCodeExpiry.getMinutes() + 15
+      ); // 15 minutes expiry
+
+      const user = await userRepository.findOne({
+        where: { email, is_deleted: false },
+      });
+      if (!user) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+      const res = await sendCode(email, verificationCode);
+      if (res.Error) {
+        return {
+          statusCode: 403,
+          body: JSON.stringify({
+            message: res?.Error?.message,
+          }),
+        };
+      }
+      user.verificationCode = verificationCode;
+      user.verificationCodeExpiry = verificationCodeExpiry;
+
+      await userRepository.save(user);
+      return { message: Messages.VERIFICATION_CODE_SENT };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static verifyOTP = async (req) => {
+    try {
+      const AppDataSource = await getDatabaseConnection();
+      const userRepository = AppDataSource.getRepository(User);
+      const { email, otp } = JSON.parse(req.body);
+
+      const user: IUser | null = await userRepository.findOne({
+        where: { email, is_deleted: false },
+      });
+      if (!user) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+
+      if (user.verificationCode === otp) {
+        const now = new Date();
+        if (user.verificationCodeExpiry && user.verificationCodeExpiry > now) {
+          user.is_verified = true;
+          user.verificationCode = null;
+          user.verificationCodeExpiry = null;
+
+          await userRepository.save(user);
+          return {
+            statusCode: 200,
+            body: JSON.stringify({ message: "OTP verified successfully." }),
+          };
+        } else {
+          return {
+            statusCode: 401,
+            body: JSON.stringify({ message: "Verification code has expired." }),
+          };
+        }
+      } else {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({ message: "Invalid OTP." }),
+        };
+      }
     } catch (error) {
       console.log("error", error);
       return createErrorResponse(
