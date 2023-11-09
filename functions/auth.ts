@@ -158,3 +158,16 @@ export const verifyOTP = async (
     };
   }
 };
+
+export const verifyForgotPasswordOTP = async (
+  event: APIGatewayEvent
+) => {
+  try {
+    return await AuthController.verifyForgotPasswordOTP(event);
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message || "Something went wrong" }),
+    };
+  }
+}

@@ -59,6 +59,9 @@ export class Event {
   @Column({type: "enum", enum: EventType, nullable: true})
   event_type: EventType
 
+  @Column("integer", {nullable: true})
+  hero_image_id: number;
+
   @ManyToOne(
     () => User,
     (user) => user.events

@@ -31,15 +31,34 @@ export class EventController {
         req.queryStringParameters || {};
       await checkAuthentication(req, context, callback);
       const AppDataSource = await getDatabaseConnection();
+      const photoRepository = AppDataSource.getRepository(Photo);
+
+      const handleHeroImage = async (event) => {
+        if (!event.hero_image_id) {
+          event["hero_image"] = event?.photos.length
+            ? event.photos[0]?.url
+            : null;
+        } else {
+          const photo = await photoRepository.findOne({
+            where: { id: event.hero_image_id, is_deleted: false },
+          });
+          event["hero_image"] = photo
+            ? photo.url
+            : event?.photos.length
+            ? event.photos[0]?.url
+            : null;
+        }
+      };
+
       const mainpulateData = function(events) {
         groupedBy = {};
         for (let event of events) {
           event.photos.sort((a, b) => {
             return a.id - b.id;
           });
-          event["hero_image"] = event?.photos.length
-            ? event.photos[0]?.url
-            : null;
+
+          handleHeroImage(event);
+
           const end_date = event?.end_timestamp.toLocaleDateString("en-US");
           if (!groupedBy[end_date]) {
             groupedBy[end_date] = [event];
@@ -535,7 +554,7 @@ export class EventController {
         .select("event.location")
         .getMany();
 
-        const tagsSearch = await eventRepository
+      const tagsSearch = await eventRepository
         .createQueryBuilder("event")
         .where(
           "event.userId = :userId AND LOWER(array_to_string(event.tags, ',')) LIKE :new",
@@ -552,8 +571,6 @@ export class EventController {
       let finalLocationSearch: any[] = [];
       let finalTagSearch: any[] = [];
 
-
-
       for (let e of titleSearch) {
         finalTitleSearch.push(Object.values(e));
       }
@@ -566,10 +583,17 @@ export class EventController {
         finalTagSearch.push(Object.values(e));
       }
 
-      finalTagSearch = finalTagSearch.flat().flat().filter(e => e.toLowerCase().indexOf(search.toLowerCase()) > -1)
-      console.log("tagsss", finalTagSearch)
+      finalTagSearch = finalTagSearch
+        .flat()
+        .flat()
+        .filter((e) => e.toLowerCase().indexOf(search.toLowerCase()) > -1);
+      console.log("tagsss", finalTagSearch);
 
-      let mergedArray = [...finalTitleSearch, ...finalLocationSearch, ...finalTagSearch];
+      let mergedArray = [
+        ...finalTitleSearch,
+        ...finalLocationSearch,
+        ...finalTagSearch,
+      ];
 
       for (let e of mergedArray.flat()) {
         const isPresent = finalResult.includes(e.toLowerCase());
@@ -585,6 +609,53 @@ export class EventController {
       return {
         message: Messages.AUTO_SUGGESTION_FETCH,
         data: finalResult,
+      };
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static setHeroImage = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await checkAuthentication(req, context, callback);
+      const AppDataSource = await getDatabaseConnection();
+      const eventRepository = AppDataSource.getRepository(Event);
+      const photoRepository = AppDataSource.getRepository(Photo);
+      const { photoId } = JSON.parse(req.body);
+      const photo = await photoRepository
+        .createQueryBuilder("photo")
+        .leftJoinAndSelect("photo.event", "event")
+        .where("photo.id = :id", { id: photoId })
+        .andWhere("photo.is_deleted = :is_deleted", { is_deleted: false })
+        .select(["photo"])
+        .addSelect(["event.id"])
+        .getOne();
+
+      if (!photo) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.PHOTO_NOT_EXIST,
+          }),
+        };
+      }
+
+      const event: any = await eventRepository.findOne({
+        where: { id: photo.event?.id, is_deleted: false },
+      });
+      event.hero_image_id = photo.id;
+      await eventRepository.save(event);
+
+      return {
+        message: Messages.EVENT_HERO_IMAGE_SET,
       };
     } catch (error) {
       console.log("error", error);

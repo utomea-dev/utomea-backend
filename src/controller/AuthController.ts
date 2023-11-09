@@ -29,6 +29,7 @@ import { checkAuthentication } from "../middleware/checkAuth";
 import { PutObjectCommand, S3Client, S3ClientConfig } from "@aws-sdk/client-s3";
 import { parser } from "../utilities/formParser";
 import { ACCOUNT_TYPE } from "../enums/userEnums";
+import { ForgotPassword } from "../entity/ForgetPassword.entity";
 
 require("dotenv").config();
 
@@ -83,11 +84,21 @@ export class AuthController {
       const user: IUser | null = await userRepository.findOne({
         where: { email, is_deleted: false },
       });
+
       if (!user) {
         return {
           statusCode: 404,
           body: JSON.stringify({
             message: Messages.USER_NOT_EXISTS,
+          }),
+        };
+      }
+
+      if (user && user.account_type === ACCOUNT_TYPE.SOCIAL_ACCOUNT) {
+        return {
+          statusCode: 403,
+          body: JSON.stringify({
+            message: Messages.EMAIL_LINKED_TO_SOCIAL,
           }),
         };
       }
@@ -235,10 +246,13 @@ export class AuthController {
       );
     }
   };
+
   public static forgotPassword = async (req: APIGatewayProxyEvent) => {
-    const SECRET_KEY: string = await getSecretFromSecretManager();
     const AppDataSource = await getDatabaseConnection();
     const userRepository = AppDataSource.getRepository(User);
+    const forgotPasswordRepository = AppDataSource.getRepository(
+      ForgotPassword
+    );
     try {
       const { email } = JSON.parse(req.body || "");
       const user = await userRepository.findOne({
@@ -261,12 +275,25 @@ export class AuthController {
           }),
         };
       }
-      const token = jwt.sign({ email }, SECRET_KEY, {
-        expiresIn: "15m",
-      });
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpiry = new Date();
+      otpExpiry.setMinutes(otpExpiry.getMinutes() + 15); // 15 minutes expiry
+      await run(email, otp);
+      const userExistsInForgetPassword = await forgotPasswordRepository.findOne(
+        { where: { email } }
+      );
+      if (userExistsInForgetPassword) {
+        userExistsInForgetPassword.otp = otp;
+        userExistsInForgetPassword.otpExpiry = otpExpiry;
+        await forgotPasswordRepository.save(userExistsInForgetPassword);
+      } else {
+        const newEntry = new ForgotPassword();
+        newEntry.email = email;
+        newEntry.otp = otp;
+        newEntry.otpExpiry = otpExpiry;
+        await forgotPasswordRepository.save(newEntry);
+      }
 
-      const resetPasswordLink = `utomeaapp://reset-password/${token}`;
-      await run(email, resetPasswordLink);
       return {
         message: Messages.RESET_LINK_SENT,
       };
@@ -279,17 +306,96 @@ export class AuthController {
     }
   };
 
+  public static verifyForgotPasswordOTP = async (req) => {
+    try {
+      const AppDataSource = await getDatabaseConnection();
+      const forgotPasswordRepository = AppDataSource.getRepository(
+        ForgotPassword
+      );
+      const { email, otp } = JSON.parse(req.body);
+
+      const user = await forgotPasswordRepository.findOne({
+        where: { email },
+      });
+      if (!user) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+
+      if (user.otp === otp) {
+        const now = new Date();
+        if (user.otpExpiry && user.otpExpiry > now) {
+          return {
+            statusCode: 200,
+            body: JSON.stringify({ message: "OTP verified successfully." }),
+          };
+        } else {
+          return {
+            statusCode: 401,
+            body: JSON.stringify({ message: "Verification code has expired." }),
+          };
+        }
+      } else {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({ message: "Invalid OTP." }),
+        };
+      }
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
   public static resetPassword = async (req: APIGatewayProxyEvent) => {
-    const SECRET_KEY: string = await getSecretFromSecretManager();
     const AppDataSource = await getDatabaseConnection();
 
     const userRepository = AppDataSource.getRepository(User);
+    const forgotPasswordRepository = AppDataSource.getRepository(
+      ForgotPassword
+    );
     try {
-      const token: string = req?.pathParameters?.token as string;
-      jwt.verify(token, SECRET_KEY);
-      const { password, confirm_password }: IResetPassword = JSON.parse(
-        req.body || ""
-      );
+      const {
+        email,
+        otp,
+        password,
+        confirm_password,
+      }: IResetPassword = JSON.parse(req.body || "");
+
+      const forgotEntityUser = await forgotPasswordRepository.findOne({
+        where: { email },
+      });
+      if (!forgotEntityUser) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+
+      if (forgotEntityUser.otp !== otp) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({ message: "Invalid OTP." }),
+        };
+      }
+
+      const now = new Date();
+      if (forgotEntityUser.otpExpiry && forgotEntityUser.otpExpiry < now) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({ message: "Verification code has expired." }),
+        };
+      }
+
       if (password !== confirm_password) {
         return {
           statusCode: 403,
@@ -298,9 +404,6 @@ export class AuthController {
           }),
         };
       }
-      const decoded = jwt.decode(token);
-      const email = decoded?.["email"];
-      console.log("email", email);
       const user = await userRepository.findOne({
         where: { email, is_deleted: false },
       });
@@ -320,6 +423,12 @@ export class AuthController {
 
       user.password = hashedPassword;
       await userRepository.save(user);
+      await forgotPasswordRepository
+        .createQueryBuilder("user")
+        .delete()
+        .from(ForgotPassword)
+        .where("email = :email", { email })
+        .execute();
       return {
         message: Messages.PASSWORD_RESET,
       };
@@ -479,6 +588,7 @@ export class AuthController {
       const newUser: IUser = new User();
       newUser.email = email;
       newUser.account_type = ACCOUNT_TYPE.SOCIAL_ACCOUNT;
+      newUser.is_verified = true;
       await userRepository.save(newUser);
       const token = jwt.sign(
         { id: newUser?.id, email: newUser?.email },
@@ -536,7 +646,16 @@ export class AuthController {
     try {
       const AppDataSource = await getDatabaseConnection();
       const userRepository = AppDataSource.getRepository(User);
+      console.log("reqqqq", req.body);
       const { email } = JSON.parse(req.body);
+      if (!email) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: Messages.INVALID_EMAIL,
+          }),
+        };
+      }
       const verificationCode = Math.floor(
         100000 + Math.random() * 900000
       ).toString();
@@ -548,6 +667,7 @@ export class AuthController {
       const user = await userRepository.findOne({
         where: { email, is_deleted: false },
       });
+
       if (!user) {
         return {
           statusCode: 404,

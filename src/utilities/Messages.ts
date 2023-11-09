@@ -11,6 +11,8 @@ export const Messages = {
   //Image upload messages
   IMAGE_UPLOAD_SUCCESS: "Images upload successfully",
   PHOTOS_DELETED_SUCCESS: "Photos deleted successfully",
+  PHOTO_NOT_EXIST: "Photo does not exist",
+  EVENT_HERO_IMAGE_SET: "Hero image for this event changed successfully",
   //User Messages
   DUPLICATE_USER: "User with this email already exists",
   USER_CREATED: "User signup successfull",
@@ -31,6 +33,7 @@ export const Messages = {
   PASSWORD_CHANGE: "Password has been changed successfully",
   INCORRECT_PASSWORD: "Current password is incorrect",
   VERIFICATION_CODE_SENT: "Verification code has been sent to your email address",
+  INVALID_EMAIL:"Invalid email address",
   //Category
   CATEGORY_FETCH_SUCCESS: "Categories fetched successfully",
   //Excluded Loction

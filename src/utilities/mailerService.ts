@@ -1,7 +1,7 @@
 import { SendEmailCommand } from "@aws-sdk/client-ses";
 import { sesClient } from "../libs/sesClient";
 
-const createSendEmailCommand = (recipientAddress: string, link: string) => {
+const createSendEmailCommand = (recipientAddress: string, otp: string) => {
   return new SendEmailCommand({
     Destination: {
       ToAddresses: [recipientAddress],
@@ -10,24 +10,24 @@ const createSendEmailCommand = (recipientAddress: string, link: string) => {
       Body: {
         Html: {
           Charset: "UTF-8",
-          Data: `Reset Password Link: <a href="#">${link}</a>`,
+          Data: `Your reset password otp: ${otp}`,
         },
         Text: {
           Charset: "UTF-8",
-          Data: `${link}`,
+          Data: `Your reset password otp: ${otp}`,
         },
       },
       Subject: {
         Charset: "UTF-8",
-        Data: "Reset Password Request",
+        Data: "Reset Password OTP Request",
       },
     },
     Source: "nikhil.taneja@qed42.com",
   });
 };
 
-const run = async (recipientAddress: string, link: string) => {
-  const sendEmailCommand = createSendEmailCommand(recipientAddress, link);
+const run = async (recipientAddress: string, otp: string) => {
+  const sendEmailCommand = createSendEmailCommand(recipientAddress, otp);
 
   try {
     return await sesClient.send(sendEmailCommand);

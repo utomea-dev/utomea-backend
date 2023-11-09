@@ -22,6 +22,8 @@ export interface IUpdateUserDetails {
 export interface IResetPassword {
   password: string;
   confirm_password: string;
+  email: string;
+  otp: string;  
 }
 
 export interface IUser {

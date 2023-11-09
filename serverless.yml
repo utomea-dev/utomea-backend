@@ -7,6 +7,7 @@ custom:
 
 provider:
   name: aws
+  versionFunctions: false
   runtime: nodejs18.x
   timeout: 30 # the timeout is 20 seconds (default is 6 seconds)
   lambdaHashingVersion: 20201221
@@ -125,6 +126,13 @@ functions:
           path: /user/verify-otp
           method: post
 
+  verifyForgotPasswordOTP:
+    handler: functions/auth.verifyForgotPasswordOTP
+    events:
+      - httpApi:
+          path: /user/verify-forgot-otp
+          method: post
+
   userSignIn:
     handler: functions/auth.userSignIn
     events:
@@ -157,7 +165,7 @@ functions:
     handler: functions/auth.resetPassword
     events:
       - httpApi:
-          path: /auth/reset-password/{token}
+          path: /auth/reset-password
           method: post
 
   changePassword:
@@ -201,6 +209,15 @@ functions:
       - httpApi:
           path: /user/delete-profile-pic
           method: delete
+
+  setHeroImage:
+    handler: functions/events.setHeroImage
+    events:
+      - httpApi:
+          path: /events/set-hero-image
+          method: post
+
+
 
   verify-token:
     handler: src/middleware/verifyToken.authenticateJWT
