@@ -547,6 +547,14 @@ export class AuthController {
       const AppDataSource = await getDatabaseConnection();
       const userRepository = AppDataSource.getRepository(User);
       const { email } = JSON.parse(req.body || "{}");
+      if (!email) {
+        return {
+          statusCode: 422,
+          body: JSON.stringify({
+            message: Messages.INVALID_EMAIL,
+          }),
+        };
+      }
       const user: IUser | null = await userRepository.findOne({
         where: {
           email,
@@ -555,7 +563,10 @@ export class AuthController {
         },
       });
 
+      console.log("user in social login", user);
+
       if (user) {
+        console.log("Innn user exists condition");
         return {
           statusCode: 403,
           body: JSON.stringify({
@@ -741,6 +752,47 @@ export class AuthController {
           body: JSON.stringify({ message: "Invalid OTP." }),
         };
       }
+    } catch (error) {
+      console.log("error", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static deleteUser = async (
+    req,
+    context: Context,
+    callback: APIGatewayProxyCallback
+  ) => {
+    try {
+      await authenticateJWT(req, context, callback);
+      if (!req?.user) {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({
+            message: Messages.UNAUTHORIZED,
+          }),
+        };
+      }
+      const AppDataSource = await getDatabaseConnection();
+      const userRepository = AppDataSource.getRepository(User);
+      const userId = +req?.pathParameters?.id;
+      const user = await userRepository.findOne({
+        where: { id: userId, is_deleted: false },
+      });
+      if (!user) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.USER_NOT_EXIST,
+          }),
+        };
+      }
+      user.is_deleted = true;
+      await userRepository.save(user);
+      return { message: Messages.USER_DELETED_SUCCESS };
     } catch (error) {
       console.log("error", error);
       return createErrorResponse(

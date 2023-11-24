@@ -14,6 +14,7 @@ import { In } from "typeorm";
 import { checkAuthentication } from "../middleware/checkAuth";
 import { User } from "../entity/User.entity";
 import { IUser } from "../interfaces/user.interface";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 require("dotenv").config();
 
@@ -59,11 +60,15 @@ export class EventController {
 
           handleHeroImage(event);
 
-          const end_date = event?.end_timestamp.toLocaleDateString("en-US");
-          if (!groupedBy[end_date]) {
-            groupedBy[end_date] = [event];
+          const begin_date = event?.begin_timestamp.toLocaleDateString(
+            "en-US",
+            { timeZone: "UTC" }
+          );
+          console.log("begin date", begin_date, event.id);
+          if (!groupedBy[begin_date]) {
+            groupedBy[begin_date] = [event];
           } else {
-            groupedBy[end_date].push(event);
+            groupedBy[begin_date].push(event);
           }
         }
 
@@ -95,7 +100,7 @@ export class EventController {
             verified,
           })
           .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
-          .orderBy("event.end_timestamp", "DESC")
+          .orderBy("event.begin_timestamp", "DESC")
           .skip(skip)
           .take(limit)
           .getMany();
@@ -115,14 +120,14 @@ export class EventController {
             verified,
           })
           .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
-          .orderBy("event.end_timestamp", "DESC")
+          .orderBy("event.begin_timestamp", "DESC")
           .getMany();
 
         result = mainpulateData(allEvents);
 
         // console.log("In date", date);
         for (let e of result) {
-          let eventDate = e?.[0]?.end_timestamp.toISOString().split("T")[0];
+          let eventDate = e?.[0]?.begin_timestamp.toISOString().split("T")[0];
           eventDate = new Date(eventDate);
           eventDate.setHours(0, 0, 0, 0);
           let dateParams = new Date(date);
@@ -329,6 +334,7 @@ export class EventController {
       );
       console.log("start date", search);
       const AppDataSource = await getDatabaseConnection();
+      const photoRepository = AppDataSource.getRepository(Photo);
       const events = await AppDataSource.getRepository(Event)
         .createQueryBuilder("event")
         .leftJoinAndSelect("event.photos", "photo")
@@ -364,8 +370,33 @@ export class EventController {
 
         .andWhere("event.is_deleted = :is_deleted", { is_deleted: false })
         .loadRelationCountAndMap("event.photosCount", "event.photos")
-        .orderBy("event.end_timestamp", "DESC")
+        .orderBy("event.begin_timestamp", "DESC")
         .getMany();
+
+      const handleHeroImage = async (event) => {
+        if (!event.hero_image_id) {
+          event["hero_image"] = event?.photos.length
+            ? event.photos[0]?.url
+            : null;
+        } else {
+          const photo = await photoRepository.findOne({
+            where: { id: event.hero_image_id, is_deleted: false },
+          });
+          event["hero_image"] = photo
+            ? photo.url
+            : event?.photos.length
+            ? event.photos[0]?.url
+            : null;
+        }
+      };
+
+      for (let event of events) {
+        event.photos.sort((a, b) => {
+          return a.id - b.id;
+        });
+
+        handleHeroImage(event);
+      }
 
       return {
         message: Messages.EVENT_FETCHED_SUCCESS,
@@ -428,7 +459,99 @@ export class EventController {
       let responseArray: any = [];
 
       for (let e of files) {
-        const url = `https://utomea-events.s3.us-east-2.amazonaws.com/${e?.filename?.filename}`;
+        const url = `https://d1hyndrn9wvp80.cloudfront.net/${e?.filename?.filename}`;
+        responseArray.push(url);
+        const photo = new Photo();
+        photo.url = url;
+        photo.event = foundEvent;
+        await photoRepository.save(photo);
+      }
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: "Images uploaded successfully",
+          data: responseArray,
+        }),
+      };
+    } catch (error) {
+      console.log("Error in catch block", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static getPreSignedUrl = async (req, context, callback) => {
+    await checkAuthentication(req, context, callback);
+    const s3Config: S3ClientConfig = {
+      region: "us-east-2",
+      credentials: {
+        accessKeyId: await getAccessKeyFromSecretManager(),
+        secretAccessKey: await getAwsSecretKeyFromSecretManager(),
+      },
+    };
+    const { files } = JSON.parse(req.body);
+    console.log("files", files);
+
+    const client = new S3Client(s3Config);
+
+    try {
+      const urls: any = [];
+      for (let i = 0; i < files.length; i++) {
+        const key = `${files[i]}`; // Adjust the key as needed
+
+        const putObjectCommand = new PutObjectCommand({
+          Bucket: "utomea-events",
+          Key: key,
+          ContentType: "image/jpeg",
+        });
+        let url = await getSignedUrl(client, putObjectCommand, {
+          expiresIn: 3600,
+        });
+        urls.push(url);
+      }
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: Messages.PRE_SIGNED_URL_FETCH,
+          data: urls,
+        }),
+      };
+    } catch (error) {
+      console.log("Error in catch block", error);
+      return createErrorResponse(
+        error?.status || 500,
+        error.message || "Internal Server Error"
+      );
+    }
+  };
+
+  public static seedUrlsInDB = async (req) => {
+    try {
+      const AppDataSource = await getDatabaseConnection();
+      const eventRepository = AppDataSource.getRepository(Event);
+      const photoRepository = AppDataSource.getRepository(Photo);
+      const { files, eventId } = JSON.parse(req.body);
+      console.log("files", files);
+      const foundEvent = await eventRepository.findOne({
+        where: { id: eventId, is_deleted: false },
+      });
+      if (!foundEvent) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: Messages.EVENT_NOT_FOUND,
+          }),
+        };
+      }
+
+      const responseArray: string[] = [];
+
+      for (let e of files) {
+        const url = `https://d1hyndrn9wvp80.cloudfront.net/${e}`;
         responseArray.push(url);
         const photo = new Photo();
         photo.url = url;

@@ -88,6 +88,20 @@ functions:
           method: post
     environment:
       BUCKET_NAME: utomea-events
+  
+  getPreSignedUrl:
+    handler: index.getPreSignedUrl
+    events:
+      - httpApi:
+          path: /events/presigned-url
+          method: post
+
+  seedImageUrls:
+    handler: index.seedImageUrls
+    events:
+      - httpApi:
+          path: /events/seed-url
+          method: post
 
   uploadProfilePic:
     handler: functions/auth.uploadProfilePic
@@ -153,6 +167,14 @@ functions:
       - httpApi:
           path: /user/user-details
           method: put
+
+  deleteUser:
+    handler: functions/auth.deleteUser
+    events:
+      - httpApi:
+          path: /user/delete-user/{id}
+          method: delete
+
 
   forgotPassword:
     handler: functions/auth.forgotPassword

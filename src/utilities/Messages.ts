@@ -13,6 +13,7 @@ export const Messages = {
   PHOTOS_DELETED_SUCCESS: "Photos deleted successfully",
   PHOTO_NOT_EXIST: "Photo does not exist",
   EVENT_HERO_IMAGE_SET: "Hero image for this event changed successfully",
+  PRE_SIGNED_URL_FETCH: "Pre signed url fetched successfully",
   //User Messages
   DUPLICATE_USER: "User with this email already exists",
   USER_CREATED: "User signup successfull",
@@ -25,6 +26,7 @@ export const Messages = {
   USER_DETAILS_FETCHED: "User details fetched successfully",
   EMAIL_ALREADY_REGISTERED: "Email address already registered",
   EMAIL_LINKED_TO_SOCIAL: "This email address is linked to your social account",
+  USER_DELETED_SUCCESS: "User deleted successfully",
   //Auth
   UNAUTHORIZED: "Unauthorized",
   RESET_LINK_SENT: "Reset password link has been sent to your email address",

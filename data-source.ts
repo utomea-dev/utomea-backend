@@ -29,15 +29,15 @@ const getDatabaseConnection = async (): Promise<EntityManager> => {
     console.log("No DB Connection Found! Creating New Connection!");
     dataSource = new DataSource({
       type: "postgres",
-      // host: "utomea-dev.cxpuvfavg0yv.us-east-2.rds.amazonaws.com",
-      host: "localhost",
+      host: "utomea-dev.cxpuvfavg0yv.us-east-2.rds.amazonaws.com",
+      // host: "localhost",
       port: 5432,
-      username: "postgres", // Local
-      password: "root", // Local
-      // username: "postgres", // Dev
-      // password: "NAJYHMFOnM9bvSWQSy9T",
-      // database: "utomea-dev",
-      database: "react-native-serverless",
+      // username: "postgres", // Local
+      // password: "root", // Local
+      username: "postgres", // Dev
+      password: "NAJYHMFOnM9bvSWQSy9T",
+      database: "utomea-dev",
+      // database: "react-native-serverless",
       synchronize: true,
       logging: false,
       entities: [__dirname + "/**/*.entity.{js,ts}"],
@@ -46,9 +46,9 @@ const getDatabaseConnection = async (): Promise<EntityManager> => {
       extra: {
         connectionTimeoutMillis: 4000,
       },
-      // ssl: {
-      //   rejectUnauthorized: false,
-      // },
+      ssl: {
+        rejectUnauthorized: false,
+      },
     });
     return await dataSource
       .initialize()

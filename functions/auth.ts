@@ -171,3 +171,18 @@ export const verifyForgotPasswordOTP = async (
     };
   }
 }
+
+export const deleteUser = async (
+  event: APIGatewayEvent,
+  context: Context,
+  callback: APIGatewayProxyCallback
+) => {
+  try {
+    return await AuthController.deleteUser(event, context, callback);
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message || "Something went wrong" }),
+    };
+  }
+}
